@@ -1,0 +1,2 @@
+# GuGUAI
+一个基于deepseek chat demo前端的聊天后端，可以在保密apikey的前提下为用户提供聊天服务，需要自备Deepseek APIkey ,建议使用Windows部署,因为作者学业因素且该项目纯AIcoding，此项目维护不积极
