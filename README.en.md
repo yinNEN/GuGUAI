@@ -37,7 +37,7 @@ English | [简体中文](README.md)
 - **Batch management**: admin conversation/storage tables support select-all, multi-select, and batch deletion; the chat sidebar supports batch deletion (pinning is not implemented yet).
 - **User management**: create/edit/disable/delete users, rename your own username, reset passwords, login rate limiting; mark “must change password on next login”, forcing a modal and re-login before accessing chat/admin APIs.
 - **Audit log**: login, user management, and API Key changes are recorded.
-- **History import/export**: importing a ZIP uploads local originals to the server; export has an “official-compatible” mode that writes only image originals so the ZIP can be imported by the official DeepSeek client.
+- **History import/export**: importing a ZIP uploads local originals to the server; export has an “official-compatible” mode that writes only image originals so the ZIP can be imported by the official DeepSeek client. During export, uncached local details are fetched from the server on demand instead of failing when a summary exists without its body.
 - **Storage management**: adjust database/buffer/text quotas (4GB/2GB/1GB by default), manage files, delete conversations; deletes trigger incremental VACUUM to return freed pages, and a manual VACUUM remains available. Buffers and text areas evict oldest files when over quota.
 - **Dark mode**: login page, admin console, and account page support theme switching (follow system by default); the chat UI keeps its original theme setting.
 - **Account entry**: account/logout/admin links are grouped under Settings in chat, with a `/ui/account` page.
