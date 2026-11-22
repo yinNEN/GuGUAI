@@ -48,13 +48,11 @@ USERNAME_RE = re.compile(r"^[\w.\-]{2,64}$", re.UNICODE)
 class UserCreateIn(BaseModel):
     username: str = Field(min_length=2, max_length=64)
     password: str = Field(min_length=8, max_length=128)
-    role: Literal["admin", "user"] = "user"
     must_change_password: bool = False
 
 
 class UserUpdateIn(BaseModel):
     username: str | None = Field(default=None, min_length=2, max_length=64)
-    role: Literal["admin", "user"] | None = None
     is_active: bool | None = None
     password: str | None = Field(default=None, min_length=8, max_length=128)
     must_change_password: bool | None = None
@@ -161,16 +159,13 @@ async def create_user_api(payload: UserCreateIn, request: Request):
         return JSONResponse({"detail": "用户名已存在"}, status_code=409)
     if not _password_ok(payload.password):
         return JSONResponse({"detail": "密码过长（UTF-8 编码后不能超过 72 字节）"}, status_code=400)
-    if payload.role == "admin" and count_admins(active_only=False) >= 1:
-        return JSONResponse({"detail": "系统只允许一个管理员，请先在现有管理员中调整角色"}, status_code=409)
-
     user_id = create_user(
         username,
         hash_password(payload.password),
-        role=payload.role,
+        role="user",
         must_change_password=1 if payload.must_change_password else 0,
     )
-    audit(admin["id"], "user_create", f"username={username} role={payload.role}", client_ip(request))
+    audit(admin["id"], "user_create", f"username={username}", client_ip(request))
     return {"ok": True, "id": user_id}
 
 
@@ -181,14 +176,10 @@ async def update_user_api(user_id: int, payload: UserUpdateIn, request: Request)
     if not target:
         return JSONResponse({"detail": "用户不存在"}, status_code=404)
 
-    demoting = payload.role == "user" and target["role"] == "admin"
-    promoting = payload.role == "admin" and target["role"] != "admin"
     disabling = payload.is_active is False and target["is_active"]
-    if promoting and count_admins(active_only=False) >= 1:
-        return JSONResponse({"detail": "系统只允许一个管理员，请先调整现有管理员"}, status_code=409)
-    if (demoting or disabling) and target["id"] == admin["id"]:
-        return JSONResponse({"detail": "不能降级或禁用当前登录的管理员账号"}, status_code=400)
-    if (demoting or disabling) and target["role"] == "admin" and count_admins(active_only=False) <= 1:
+    if disabling and target["id"] == admin["id"]:
+        return JSONResponse({"detail": "不能禁用当前登录的管理员账号"}, status_code=400)
+    if disabling and target["role"] == "admin" and count_admins(active_only=False) <= 1:
         return JSONResponse({"detail": "系统至少需要保留一个管理员"}, status_code=400)
 
     updates: dict = {}
@@ -203,8 +194,6 @@ async def update_user_api(user_id: int, payload: UserUpdateIn, request: Request)
             return JSONResponse({"detail": "用户名已存在"}, status_code=409)
         if username != target["username"]:
             updates["username"] = username
-    if payload.role is not None:
-        updates["role"] = payload.role
     if payload.is_active is not None:
         updates["is_active"] = 1 if payload.is_active else 0
     if payload.password:

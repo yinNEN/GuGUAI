@@ -23,8 +23,8 @@ This repository reworks its **frontend source code** (`chat_demo_score/chat-demo
 | Unified message storage | The conversation snapshot is pushed before sending, then the server calls DeepSeek; the assistant reply is written into the snapshot after streaming ends and projected into the backend conversation/message tables |
 | File buffering | The browser uploads files to the server first (every file is capped at 32MB, 2GB of buffer by default, and overflow deletes the oldest files); during chat the server re-uploads them to DeepSeek |
 | Text preview | Text files such as txt/cpp/py/js/json can be previewed directly in the chat box and inside messages; the server has a separate text area (1GB by default) |
-| Storage management | The admin console manages the database/buffer/text area limits, the file list, conversation cleanup, and VACUUM |
-| User management | The admin console creates/edits/disables/deletes users, resets passwords, and grants administrator rights |
+| Storage management | The admin console manages database/buffer/text limits, files, conversation cleanup; deletes reclaim pages automatically and manual VACUUM remains available |
+| User management | The admin console creates/edits/disables/deletes users, renames the administrator account, and resets passwords |
 | Audit | Records logins, user management, API Key changes, and other operations |
 | User-side history | `/ui/history` also lets users view all of their own conversations saved on the server |
 | Account page | `/ui/account` shows account information and lets users change their password; the account entry point in the chat UI is unified under settings |

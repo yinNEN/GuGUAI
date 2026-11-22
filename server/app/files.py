@@ -14,7 +14,7 @@ import httpx
 from fastapi import UploadFile
 
 from .config import settings
-from .db import db
+from .db import db, reclaim_space
 from .store import get_api_key, get_setting, set_setting
 
 FILE_MAX_BYTES = 32 * 1024 * 1024
@@ -315,6 +315,35 @@ def delete_user_files(user_id: int) -> None:
                 pass
         conn.execute("DELETE FROM session_files WHERE user_id = ?", (user_id,))
         conn.execute("DELETE FROM stored_files WHERE user_id = ?", (user_id,))
+
+
+def purge_orphan_files(max_age_seconds: int = 24 * 60 * 60) -> int:
+    """Delete uploads that were never referenced by a session.
+
+    Draft uploads are linked only when the session snapshot is pushed. A user
+    who cancels or closes the page leaves no reference; keep a grace period so
+    an in-progress draft is not removed.
+    """
+    cutoff = int(time.time() * 1000) - max_age_seconds * 1000
+    removed = 0
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT f.* FROM stored_files f "
+            "LEFT JOIN session_files sf "
+            "ON sf.user_id = f.user_id AND sf.file_id = f.id "
+            "WHERE sf.file_id IS NULL AND f.created_at < ?",
+            (cutoff,),
+        ).fetchall()
+        for row in rows:
+            try:
+                _record_path(row).unlink(missing_ok=True)
+            except (OSError, FileNotFound):
+                pass
+            conn.execute("DELETE FROM stored_files WHERE id = ?", (row["id"],))
+            removed += 1
+    if removed:
+        reclaim_space()
+    return removed
 
 
 def delete_file(user_id: int, file_id: str, admin: bool = False) -> bool:

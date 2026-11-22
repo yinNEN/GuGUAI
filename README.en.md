@@ -27,7 +27,7 @@ English | [简体中文](README.md)
 - **Text preview**: txt/cpp/py/js/json and similar files in the composer or messages can be previewed; the server text area has a separate quota (1GB by default).
 - **Image preview**: images in messages and the composer open in an in-page modal using data URLs, without blob URLs or new tabs; shares the same modal as HTML/SVG previews.
 - **HTML/SVG execution**: model-generated HTML/SVG code blocks and uploaded `.html`/`.svg` files can be previewed in an isolated iframe.
-- **Long text to attachment**: pasting more than 2000 characters/80 lines immediately converts the content to a `.txt` attachment named after its first line, while the composer keeps the prompt. Very long manually typed text is converted at send time and the model receives an instruction to read the attachment.
+- **Long text to attachment**: pasting more than 2000 characters/80 lines immediately converts the content to a `.txt` attachment named after its first line, while the composer keeps the prompt. Very long manually typed text is converted at send time and the model receives an instruction to read the attachment. Removing the attachment, cancelling, or leaving the page cleans up uploaded drafts; the server also purges unreferenced uploads older than 24 hours.
 - **Chat multi-select**: the entry is to the left of Settings at the bottom of the sidebar. In selection mode, a circular Select all control appears next to “Select chats”; batch deletion is supported.
 - **Question jump rail**: click a question marker on the right to jump to an old message. Only a nearby window is expanded and a locating hint is shown; the entire long chat is not rendered at once.
 - **Chat search**: the search button in the sidebar/collapsed sidebar opens a top search box; it reads local cache only (IndexedDB/memory), matches user and assistant text literally, shows title/snippet/date, and jumps to the message. No backend request.
@@ -35,10 +35,10 @@ English | [简体中文](README.md)
 - **Jump rail**: short bars on the right; hover expands a scrollable question list; click a question or bar to jump.
 - **Single-admin rule**: only one administrator is allowed. The admin can rename themselves but cannot delete, demote, or disable themselves. If the admin is deleted, startup restores `admin` from `ADMIN_PASSWORD` (or a random password if unset).
 - **Batch management**: admin conversation/storage tables support select-all, multi-select, and batch deletion; the chat sidebar supports batch deletion (pinning is not implemented yet).
-- **User management**: create/edit/disable/delete users, reset passwords, grant admin, login rate limiting; mark “must change password on next login”, forcing a modal and re-login before accessing chat/admin APIs.
+- **User management**: create/edit/disable/delete users, rename your own username, reset passwords, login rate limiting; mark “must change password on next login”, forcing a modal and re-login before accessing chat/admin APIs.
 - **Audit log**: login, user management, and API Key changes are recorded.
 - **History import/export**: importing a ZIP uploads local originals to the server; export has an “official-compatible” mode that writes only image originals so the ZIP can be imported by the official DeepSeek client.
-- **Storage management**: adjust database/buffer/text quotas (4GB/2GB/1GB by default), manage files, delete conversations, VACUUM the database; buffers and text areas evict oldest files when over quota.
+- **Storage management**: adjust database/buffer/text quotas (4GB/2GB/1GB by default), manage files, delete conversations; deletes trigger incremental VACUUM to return freed pages, and a manual VACUUM remains available. Buffers and text areas evict oldest files when over quota.
 - **Dark mode**: login page, admin console, and account page support theme switching (follow system by default); the chat UI keeps its original theme setting.
 - **Account entry**: account/logout/admin links are grouped under Settings in chat, with a `/ui/account` page.
 - **All original frontend features retained**: streaming, deep thinking, web search, files/images, voice input/read-aloud, message branches, history import/export.

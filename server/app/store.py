@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from .config import settings
-from .db import db
+from .db import db, reclaim_space
 from .security import decrypt_secret, encrypt_secret
 
 logger = logging.getLogger("deepseek.store")
@@ -71,6 +71,7 @@ def update_user(user_id: int, **fields: Any) -> None:
 def delete_user(user_id: int) -> None:
     with db() as conn:
         conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    reclaim_space()
 
 
 def touch_login(user_id: int) -> None:
@@ -199,6 +200,18 @@ def audit(user_id: int | None, action: str, detail: str = "", ip: str = "") -> N
             "INSERT INTO audit_logs (user_id, action, detail, ip, created_at) VALUES (?, ?, ?, ?, ?)",
             (user_id, action, detail[:2000], ip, now_iso()),
         )
+
+
+def prune_audit_logs() -> None:
+    """Keep audit history bounded (180 days / 100k rows) so it cannot grow forever."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=180)).isoformat(timespec="seconds")
+    with db() as conn:
+        conn.execute("DELETE FROM audit_logs WHERE created_at < ?", (cutoff,))
+        conn.execute(
+            "DELETE FROM audit_logs WHERE id NOT IN "
+            "(SELECT id FROM audit_logs ORDER BY id DESC LIMIT 100000)"
+        )
+    reclaim_space()
 
 
 def list_audit(limit: int = 100) -> list[dict]:
@@ -675,11 +688,13 @@ def _replace_session_refs(conn, user_id: int, client_id: str, session: dict) -> 
 
 
 def backfill_session_files() -> None:
-    """旧版本升级：根据现有快照补建附件引用表。"""
+    """Repair missing attachment references for every existing snapshot.
+
+    Older versions could leave a partially populated session_files table; a
+    global "if any rows exist, skip" check would let purge_orphan_files delete
+    legitimate message attachments that were never backfilled.
+    """
     with db() as conn:
-        refs = int(conn.execute("SELECT COUNT(*) FROM session_files").fetchone()[0])
-        if refs:
-            return
         rows = conn.execute("SELECT user_id, client_id, data FROM session_snapshots").fetchall()
         for row in rows:
             try:
@@ -687,10 +702,10 @@ def backfill_session_files() -> None:
             except Exception:
                 continue
             if isinstance(session, dict):
-                _session_file_ids_set = _session_file_ids(session)
+                file_ids = _session_file_ids(session)
                 conn.executemany(
                     "INSERT OR IGNORE INTO session_files (user_id, client_id, file_id) VALUES (?, ?, ?)",
-                    [(row["user_id"], row["client_id"], file_id) for file_id in _session_file_ids_set],
+                    [(row["user_id"], row["client_id"], file_id) for file_id in file_ids],
                 )
 
 def upsert_snapshot(user_id: int, session: dict, project: bool = True) -> bool:
@@ -794,6 +809,7 @@ def delete_conversation(conv_id: int) -> bool:
         from . import files as file_store
 
         file_store.delete_unreferenced_files(user_id, file_ids)
+    reclaim_space()
     return True
 
 
@@ -823,6 +839,7 @@ def delete_snapshot(user_id: int, client_id: str) -> bool:
         from . import files as file_store
 
         file_store.delete_unreferenced_files(user_id, file_ids)
+    reclaim_space()
     return cur.rowcount > 0
 
 
@@ -872,4 +889,5 @@ def replace_snapshots(user_id: int, sessions: list[dict]) -> int:
         from . import files as file_store
 
         file_store.delete_unreferenced_files(user_id, removed)
+    reclaim_space()
     return len(sessions)

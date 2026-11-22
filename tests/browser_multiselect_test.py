@@ -65,7 +65,7 @@ ev("(()=>{const b=[...document.querySelectorAll('.nav-item')].find(x=>(x.innerTe
 self_row_buttons=ev("(()=>{const row=[...document.querySelectorAll('#users-body tr')].find(r=>r.innerText.includes('admin')); return row?Array.from(row.querySelectorAll('button')).map(b=>b.innerText):[]})()")
 check('删除' not in (self_row_buttons or []),'管理员自己行没有删除按钮',str(self_row_buttons))
 ev("document.getElementById('btn-new-user').click()");wait(0.3)
-check(ev("document.querySelector('#f-role option[value=admin]').disabled"),'已有管理员时新建管理员选项禁用')
+check(not ev("!!document.querySelector('#f-role')"),'新建用户已移除角色设置')
 ws.close()
 print(); 
 if fail: print('失败：',fail); raise SystemExit(1)

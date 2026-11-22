@@ -11,6 +11,9 @@
       return { "<": "&lt;", ">": "&gt;", "&": "&amp;", '"': "&quot;", "'": "&apos;" }[char];
     });
   }
+  function safeIconUrl(data) {
+    return typeof data.mark_image === "string" && data.mark_image.indexOf("/api/public/branding/icon") === 0 ? data.mark_image : "";
+  }
   function applyFavicon(data, mark, color) {
     var link = document.querySelector('link[rel~="icon"]');
     if (data.mark_mode === "none") {
@@ -19,8 +22,8 @@
     }
     var href = "";
     var type = "";
-    if (data.mark_mode === "image" && data.mark_image) {
-      href = data.mark_image;
+    if (data.mark_mode === "image" && safeIconUrl(data)) {
+      href = safeIconUrl(data);
     } else {
       var text = escapeXml(mark || "G");
       var size = text.length > 2 ? 20 : 30;
@@ -54,9 +57,9 @@
       }
       el.style.display = "";
       el.style.backgroundImage = "";
-      if (data.mark_mode === "image" && data.mark_image) {
+      if (data.mark_mode === "image" && safeIconUrl(data)) {
         el.textContent = "";
-        el.style.backgroundImage = "url(" + JSON.stringify(data.mark_image) + ")";
+        el.style.backgroundImage = "url(" + JSON.stringify(safeIconUrl(data)) + ")";
         el.style.backgroundSize = "cover";
         el.style.backgroundPosition = "center";
         el.style.fontSize = "";

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import secrets
 from contextlib import asynccontextmanager
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import admin_api, auth_api, branding, chat_api, files_api, my_api, pages, sync_api
+from . import files as file_store
 from .config import settings
 from .db import db, init_db
 from .security import hash_password, token_hash
@@ -21,6 +23,7 @@ from .store import (
     get_api_key,
     get_session_user,
     get_user_by_username,
+    prune_audit_logs,
     purge_expired_sessions,
     update_user,
 )
@@ -97,14 +100,31 @@ async def lifespan(app: FastAPI):
     init_db()
     backfill_session_files()
     purge_expired_sessions()
+    prune_audit_logs()
+    file_store.purge_orphan_files()
     ensure_bootstrap_admin()
     api_key, source = get_api_key()
     logger.info("上游地址：%s", settings.upstream_base)
     logger.info("API Key 状态：%s", f"已配置（{source}）" if api_key else "未配置，请登录管理后台设置")
     if not (settings.web_dir / "index.html").exists():
         logger.error("未找到前端文件：%s", settings.web_dir / "index.html")
+    cleanup_task = asyncio.create_task(_orphan_cleanup_loop())
     yield
+    cleanup_task.cancel()
+    try:
+        await cleanup_task
+    except asyncio.CancelledError:
+        pass
     await close_client()
+
+
+async def _orphan_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            await asyncio.to_thread(file_store.purge_orphan_files)
+        except Exception:
+            logger.warning("orphan file cleanup failed", exc_info=True)
 
 
 def _origin_allowed(request: Request, origin: str) -> bool:

@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import logging
 import sqlite3
 from contextlib import contextmanager
 from typing import Iterator
 
 from .config import settings
 
+logger = logging.getLogger("deepseek.db")
+
 SCHEMA = """
+PRAGMA auto_vacuum=INCREMENTAL;
 PRAGMA journal_mode=WAL;
 
 CREATE TABLE IF NOT EXISTS users (
@@ -117,6 +121,7 @@ def connect() -> sqlite3.Connection:
     conn.execute("PRAGMA busy_timeout=30000")
     conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA cache_size=-20000")
+    conn.execute("PRAGMA journal_size_limit=67108864")
     return conn
 
 
@@ -133,11 +138,51 @@ def db() -> Iterator[sqlite3.Connection]:
         conn.close()
 
 
+def _ensure_incremental_auto_vacuum() -> None:
+    """Enable incremental auto-vacuum for old databases.
+
+    SQLite only changes auto_vacuum mode after a VACUUM. This runs once for
+    existing deployments; new databases already get the pragma in SCHEMA.
+    """
+    conn = connect()
+    try:
+        mode = int(conn.execute("PRAGMA auto_vacuum").fetchone()[0])
+        if mode != 2:
+            conn.execute("PRAGMA auto_vacuum=INCREMENTAL")
+            logger.info("converting database to incremental auto-vacuum (one-time VACUUM)")
+            conn.execute("VACUUM")
+        _vacuum_free_pages(conn)
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    finally:
+        conn.close()
+
+
+def _vacuum_free_pages(conn: sqlite3.Connection) -> None:
+    # SQLite's no-argument incremental_vacuum frees one page per call on some
+    # versions; loop in batches until the freelist is drained.
+    for _ in range(10000):
+        free = int(conn.execute("PRAGMA freelist_count").fetchone()[0])
+        if free <= 0:
+            return
+        conn.execute(f"PRAGMA incremental_vacuum({min(free, 1000)})")
+
+
+def reclaim_space() -> None:
+    """Return freed SQLite pages to the filesystem and truncate the WAL."""
+    try:
+        with db() as conn:
+            _vacuum_free_pages(conn)
+            conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+    except Exception:
+        logger.warning("database space reclamation failed", exc_info=True)
+
+
 def init_db() -> None:
     settings.data_dir.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         conn.executescript(SCHEMA)
         migrate(conn)
+    _ensure_incremental_auto_vacuum()
 
 
 def migrate(conn: sqlite3.Connection) -> None:

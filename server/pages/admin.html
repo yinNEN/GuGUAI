@@ -74,7 +74,7 @@
       <div class="page-head">
         <div>
           <h2>用户管理</h2>
-          <p>创建账号、调整角色、重置密码或禁用账号</p>
+          <p>创建账号、修改自己的用户名、重置密码或禁用账号</p>
         </div>
         <button class="btn primary" id="btn-new-user">+ 新建用户</button>
       </div>
@@ -90,11 +90,11 @@
             <table>
               <thead>
                 <tr>
-                  <th>用户名</th><th>角色</th><th>状态</th><th>会话</th><th>消息</th>
+                  <th>用户名</th><th>状态</th><th>会话</th><th>消息</th>
                   <th>最后登录</th><th style="width:220px">操作</th>
                 </tr>
               </thead>
-              <tbody id="users-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+              <tbody id="users-body"><tr><td colspan="6" class="empty">加载中…</td></tr></tbody>
             </table>
           </div>
         </div>
@@ -213,12 +213,13 @@
         <div class="field" id="brand-text-row"><label>文字标识（1-4 个字符）</label><input id="brand-mark" maxlength="4" placeholder="G"></div>
         <div class="field" id="brand-image-row" hidden>
           <label>品牌图片（PNG/JPG/GIF/WebP/BMP，最大 1MB）</label>
-          <input id="brand-icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
-          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+          <input id="brand-icon-file" class="brand-file-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
+          <div class="brand-icon-actions">
+            <label class="brand-icon-thumb" id="brand-icon-thumb" for="brand-icon-file" title="选择图片">+</label>
             <button class="btn small" id="btn-upload-brand-icon" type="button">上传图片</button>
             <button class="btn small danger" id="btn-delete-brand-icon" type="button">删除图片</button>
-            <span class="hint" id="brand-icon-hint"></span>
           </div>
+          <div class="brand-icon-status"><span class="hint" id="brand-icon-hint"></span><span class="hint" id="brand-file-name"></span></div>
         </div>
         <div class="field"><label>品牌色</label><input id="brand-color" type="color" value="#4d6bfe" style="width:90px;padding:4px"></div>
         <p class="panel-sub">仅支持纯文本，不支持 HTML。修改后登录页、聊天侧边栏和管理后台会同步更新。</p>
@@ -408,13 +409,12 @@
     });
     var body = $("#users-body");
     if (!rows.length) {
-      body.innerHTML = '<tr><td colspan="7" class="empty">暂无用户</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">暂无用户</td></tr>';
       return;
     }
     body.innerHTML = rows.map(function (u) {
       return "<tr>" +
         "<td><strong>" + escapeHtml(u.username) + "</strong>" + (state.me && state.me.id === u.id ? ' <span class="hint">(我)</span>' : "") + "</td>" +
-        '<td><span class="badge ' + (u.role === "admin" ? "admin" : "user") + '">' + (u.role === "admin" ? "管理员" : "普通用户") + "</span></td>" +
         '<td><span class="badge ' + (u.is_active ? "on" : "off") + '">' + (u.is_active ? "启用" : "已禁用") + "</span></td>" +
         "<td>" + u.conversations + "</td>" +
         "<td>" + u.messages + "</td>" +
@@ -458,23 +458,20 @@
     var isEdit = mode === "edit";
     if (isEdit && !user) return;
     var self = isEdit && state.me && String(state.me.id) === String(user.id);
-    var hasAdmin = state.users.some(function (u) { return u.role === "admin"; });
-    openModal(isEdit ? "编辑用户 · " + user.username : "新建用户",
-      '<div class="field"><label>用户名' + (self ? "（管理员可修改自己的用户名）" : "") + '</label><input id="f-username" ' + (isEdit && !self ? "disabled" : "") +
-      ' value="' + (isEdit ? escapeHtml(user.username) : "") + '" placeholder="2-64 位字母、数字、下划线"></div>' +
-      '<div class="field"><label>' + (isEdit ? "重置密码（留空表示不修改）" : "密码") + '</label>' +
-      '<input id="f-password" type="password" autocomplete="new-password" placeholder="至少 8 位"></div>' +
-      '<div class="field"><label>角色</label><select id="f-role">' +
-      '<option value="user">普通用户</option><option value="admin"' + (hasAdmin ? " disabled" : "") + '>管理员</option></select></div>' +
-      '<p class="panel-sub" style="margin-top:0">系统只允许一个管理员；管理员可修改自己的用户名，不能删除、降级或禁用自己。</p>' +
-      (isEdit ? '<div class="field"><label><input type="checkbox" id="f-active" ' +
-        (user.is_active ? "checked" : "") + ' style="height:auto;vertical-align:middle"> 启用该账号</label></div>' : "") +
-      '<div class="field"><label><input type="checkbox" id="f-must" style="height:auto;vertical-align:middle"> 下次登录要求修改密码</label></div>' +
-      '<div class="error-text" id="f-error"></div>',
+    var body = '<div class="field"><label>用户名' + (self ? "（管理员可修改自己的用户名）" : "") + '</label><input id="f-username" ' + (isEdit && !self ? "disabled" : "") +
+      ' value="' + (isEdit ? escapeHtml(user.username) : "") + '" placeholder="2-64 位字母、数字、下划线"></div>';
+    if (!isEdit) {
+      body += '<div class="field"><label>密码</label><input id="f-password" type="password" autocomplete="new-password" placeholder="至少 8 位"></div>';
+    }
+    body += '<p class="panel-sub" style="margin-top:0">密码请使用列表中的「重置密码」操作；管理员不能删除、降级或禁用自己。</p>';
+    if (isEdit) {
+      body += '<div class="field"><label><input type="checkbox" id="f-active" ' +
+        (user.is_active ? "checked" : "") + (self ? " disabled" : "") + ' style="height:auto;vertical-align:middle"> 启用该账号</label></div>';
+    }
+    body += '<div class="field"><label><input type="checkbox" id="f-must" style="height:auto;vertical-align:middle"> 下次登录要求修改密码</label></div>' +
+      '<div class="error-text" id="f-error"></div>';
+    openModal(isEdit ? "编辑用户 · " + user.username : "新建用户", body,
       '<button class="btn" data-close>取消</button><button class="btn primary" id="f-save">保存</button>');
-
-    $("#f-role").value = isEdit ? user.role : "user";
-    if (self) $("#f-role").disabled = true;
     $("#f-must").checked = isEdit ? !!user.must_change_password : false;
     $("#f-save").addEventListener("click", function () { saveUser(mode, user); });
     if (!isEdit) setTimeout(function () { $("#f-username").focus(); }, 30);
@@ -483,28 +480,26 @@
   async function saveUser(mode, user) {
     var errorEl = $("#f-error");
     errorEl.textContent = "";
-    var password = $("#f-password").value;
-    if (mode === "create" && password.length < 8) { errorEl.textContent = "密码至少 8 位"; return; }
-    if (password && password.length < 8) { errorEl.textContent = "密码至少 8 位"; return; }
+    var isEdit = mode === "edit";
+    var password = isEdit ? "" : $("#f-password").value;
+    if (!isEdit && password.length < 8) { errorEl.textContent = "密码至少 8 位"; return; }
 
     try {
-      if (mode === "create") {
+      if (!isEdit) {
         await api("/api/admin/users", {
           method: "POST",
           body: {
             username: $("#f-username").value.trim(),
             password: password,
-            role: $("#f-role").value,
             must_change_password: $("#f-must").checked
           }
         });
         toast("用户已创建");
       } else {
-        var payload = { role: $("#f-role").value, is_active: $("#f-active").checked,
+        var payload = { is_active: $("#f-active").checked,
           must_change_password: $("#f-must").checked };
         var username = $("#f-username").value.trim();
         if (username && username !== user.username) payload.username = username;
-        if (password) payload.password = password;
         await api("/api/admin/users/" + user.id, { method: "PATCH", body: payload });
         toast("用户已更新");
       }
@@ -767,23 +762,49 @@
 
 
   // ---------------- 自定义网页 ----------------
+  function safeIconUrl(data) {
+    var url = data && data.mark_image;
+    return typeof url === "string" && url.indexOf("/api/public/branding/icon") === 0 ? url : "";
+  }
+
+  function applyMark(el, mode, data, baseSize) {
+    if (!el) return;
+    var iconUrl = safeIconUrl(data);
+    el.textContent = "";
+    el.style.background = data.color || "#4d6bfe";
+    el.style.backgroundImage = "";
+    el.style.backgroundSize = "cover";
+    el.style.backgroundPosition = "center";
+    el.style.fontSize = baseSize || "";
+    el.style.display = mode === "none" ? "none" : "flex";
+    el.style.alignItems = "center";
+    el.style.justifyContent = "center";
+    if (mode === "image" && iconUrl) {
+      el.style.backgroundImage = "url(" + JSON.stringify(iconUrl) + ")";
+      return;
+    }
+    if (mode === "text") {
+      el.textContent = data.mark || "G";
+      el.style.fontSize = (data.mark || "G").length > 2 ? "13px" : (baseSize || "");
+    }
+  }
+
   function renderBrandingPreview(data) {
     var mode = data.mark_mode || "text";
-    var markEl = $("#brand-preview-mark");
-    markEl.textContent = data.mark || "G";
-    markEl.style.fontSize = (data.mark || "G").length > 2 ? "13px" : "";
-    markEl.style.background = data.color || "#4d6bfe";
-    markEl.style.backgroundImage = "";
-    markEl.style.backgroundSize = "cover";
-    markEl.style.backgroundPosition = "center";
-    markEl.style.display = mode === "none" ? "none" : "flex";
-    if (mode === "image" && data.mark_image) {
-      markEl.textContent = "";
-      markEl.style.backgroundImage = "url(" + JSON.stringify(data.mark_image) + ")";
-    }
+    var preview = $("#brand-preview-mark");
+    preview.style.width = "42px";
+    preview.style.height = "42px";
+    preview.style.borderRadius = "12px";
+    preview.style.fontWeight = "700";
+    preview.style.fontSize = "20px";
+    applyMark(preview, mode, data, "20px");
     $("#brand-mode").value = mode;
     $("#brand-text-row").hidden = mode !== "text";
     $("#brand-image-row").hidden = mode !== "image";
+    var thumb = $("#brand-icon-thumb");
+    thumb.textContent = data.has_icon ? "" : "+";
+    thumb.style.backgroundImage = data.has_icon && safeIconUrl(data) ? "url(" + JSON.stringify(safeIconUrl(data)) + ")" : "";
+    thumb.classList.toggle("has-image", !!data.has_icon);
     $("#brand-icon-hint").textContent = data.has_icon ? "已上传品牌图片" : "尚未上传图片";
     $("#brand-preview-title").textContent = data.title || "GuGuAI";
     $("#brand-preview-subtitle").textContent = data.subtitle || "";
@@ -792,11 +813,16 @@
     root.style.setProperty("--brand-soft", (data.color || "#4d6bfe") + "22");
     var brand = document.querySelector(".sidebar .brand");
     if (brand) {
-      brand.querySelector(".logo-mark").textContent = data.mark || "G";
+      applyMark(brand.querySelector(".logo-mark"), mode, data, "");
       brand.querySelector("strong").textContent = (data.title || "GuGuAI") + " 管理后台";
       brand.querySelector("span").textContent = data.subtitle || "";
     }
   }
+
+  $("#brand-icon-file").addEventListener("change", function () {
+    var file = this.files && this.files[0];
+    $("#brand-file-name").textContent = file ? file.name : "";
+  });
 
   async function loadBranding() {
     try {
