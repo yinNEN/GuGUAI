@@ -1,0 +1,1059 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>管理后台 · GuGuAI</title>
+<meta name="referrer" content="same-origin">
+<link rel="stylesheet" href="/ui/assets/app.css">
+<script src="/ui/assets/theme.js"></script>
+<script src="/ui/assets/branding.js" defer></script>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo-mark" data-brand-mark>G</div>
+      <div>
+        <strong data-brand-name data-brand-suffix=" 管理后台">GuGuAI 管理后台</strong>
+        <span data-brand-subtitle>Powered by Deepseek.</span>
+      </div>
+    </div>
+
+    <button class="nav-item active" data-view="overview">📊 概览</button>
+    <button class="nav-item" data-view="users">👥 用户管理</button>
+    <button class="nav-item" data-view="apikey">🔑 API Key</button>
+    <button class="nav-item" data-view="conversations">💬 会话记录</button>
+    <button class="nav-item" data-view="audit">📝 审计日志</button>
+    <button class="nav-item" data-view="branding">🎨 自定义网页</button>
+    <button class="nav-item" data-view="storage">💾 存储管理</button>
+
+    <div class="spacer"></div>
+    <div class="side-foot">
+      <a href="/">← 返回聊天</a>
+      <a href="#" id="change-pw">修改我的密码</a>
+      <a href="/logout">退出登录</a>
+    </div>
+  </aside>
+
+  <main class="main">
+    <!-- 概览 -->
+    <section data-panel="overview">
+      <div class="page-head">
+        <div>
+          <h2>概览</h2>
+          <p>服务器状态、用户与消息统计</p>
+        </div>
+        <span class="badge on">服务运行中</span>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="label">用户总数</div><div class="value" id="s-users">-</div><div class="sub" id="s-active">-</div></div>
+        <div class="stat"><div class="label">会话总数</div><div class="value" id="s-convs">-</div><div class="sub">服务器端存储</div></div>
+        <div class="stat"><div class="label">消息总数</div><div class="value" id="s-msgs">-</div><div class="sub" id="s-today">-</div></div>
+        <div class="stat"><div class="label">API Key</div><div class="value" id="s-key" style="font-size:18px">-</div><div class="sub" id="s-key-src">-</div></div>
+      </div>
+
+      <div class="panel panel-pad">
+        <h3>运行信息</h3>
+        <p class="panel-sub">所有聊天请求都由本服务器携带 API Key 转发到 DeepSeek，浏览器端不会接触真实 Key。</p>
+        <div class="kv">
+          <div class="k">上游地址</div><div class="mono" id="i-upstream">-</div>
+          <div class="k">登录有效期</div><div id="i-ttl">-</div>
+          <div class="k">前端目录</div><div class="mono" id="i-web">-</div>
+          <div class="k">服务时间</div><div id="i-now">-</div>
+        </div>
+        <div id="key-warning" style="margin-top:16px;display:none" class="note">
+          尚未配置 API Key，普通用户暂时无法聊天。请到「API Key」页面配置。
+        </div>
+      </div>
+    </section>
+
+    <!-- 用户管理 -->
+    <section data-panel="users" hidden>
+      <div class="page-head">
+        <div>
+          <h2>用户管理</h2>
+          <p>创建账号、调整角色、重置密码或禁用账号</p>
+        </div>
+        <button class="btn primary" id="btn-new-user">+ 新建用户</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-pad">
+          <div class="toolbar">
+            <input id="user-search" placeholder="搜索用户名…" style="width:240px">
+            <span class="grow"></span>
+            <button class="btn small" id="btn-refresh-users">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>用户名</th><th>角色</th><th>状态</th><th>会话</th><th>消息</th>
+                  <th>最后登录</th><th style="width:220px">操作</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- API Key -->
+    <section data-panel="apikey" hidden>
+      <div class="page-head">
+        <div>
+          <h2>API Key 配置</h2>
+          <p>Key 加密保存在服务器，仅管理员可见；普通用户无任何读取接口</p>
+        </div>
+      </div>
+
+      <div class="panel panel-pad" style="max-width:720px">
+        <h3>当前状态</h3>
+        <p class="panel-sub" id="key-status-text">加载中…</p>
+        <div class="kv" style="margin-bottom:18px">
+          <div class="k">已配置</div><div id="key-configured">-</div>
+          <div class="k">来源</div><div id="key-source">-</div>
+          <div class="k">脱敏显示</div><div class="mono" id="key-masked">-</div>
+        </div>
+
+        <div class="note info" style="margin-bottom:18px">
+          在此保存的 Key 会覆盖环境变量 <span class="mono">DEEPSEEK_API_KEY</span>。保存后立即生效，无需重启服务。
+        </div>
+
+        <div class="field">
+          <label for="apikey-input">新的 API Key</label>
+          <input id="apikey-input" type="password" placeholder="sk-…" autocomplete="off" spellcheck="false">
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn primary" id="btn-save-key">保存</button>
+          <button class="btn" id="btn-test-key">测试连接</button>
+          <button class="btn danger" id="btn-clear-key">清除已保存的 Key</button>
+        </div>
+        <div class="error-text" id="key-msg" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- 会话记录 -->
+    <section data-panel="conversations" hidden>
+      <div class="page-head">
+        <div>
+          <h2>会话记录</h2>
+          <p>服务器端保存的全部对话（按用户归属）</p>
+        </div>
+        <button class="btn small" id="btn-refresh-convs">刷新</button>
+      </div>
+
+      <div class="panel">
+        <div class="panel-pad">
+          <div class="toolbar">
+            <input id="conv-user" type="number" min="1" placeholder="按用户 ID 筛选" style="width:170px">
+            <button class="btn small" id="btn-filter-convs">筛选</button>
+            <span class="grow"></span>
+            <span class="hint" id="conv-total"></span>
+          </div>
+          <div class="toolbar" style="margin-bottom:8px">
+            <span class="hint" id="convs-selected-count">未选择会话</span>
+            <span class="grow"></span>
+            <button class="btn small danger" id="btn-delete-selected-convs" disabled>删除选中会话</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th style="width:34px"><input type="checkbox" id="convs-select-all" aria-label="全选会话"></th><th>ID</th><th>用户</th><th>标题</th><th>消息数</th><th>更新时间</th><th>操作</th></tr>
+              </thead>
+              <tbody id="convs-body"><tr><td colspan="7" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 审计日志 -->
+    <section data-panel="audit" hidden>
+      <div class="page-head">
+        <div>
+          <h2>审计日志</h2>
+          <p>登录、用户管理与 API Key 变更记录</p>
+        </div>
+        <button class="btn small" id="btn-refresh-audit">刷新</button>
+      </div>
+      <div class="panel">
+        <div class="panel-pad">
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>用户</th><th>动作</th><th>详情</th><th>IP</th></tr></thead>
+              <tbody id="audit-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 自定义网页 -->
+    <section data-panel="branding" hidden>
+      <div class="page-head">
+        <div>
+          <h2>自定义网页</h2>
+          <p>调整网页主标题、副标题、品牌标识与品牌色</p>
+        </div>
+      </div>
+      <div class="panel panel-pad" style="max-width:780px">
+        <div class="field"><label>主标题（最长 80 字）</label><input id="brand-title" maxlength="80" placeholder="GuGuAI"></div>
+        <div class="field"><label>副标题（最长 120 字）</label><input id="brand-subtitle" maxlength="120" placeholder="Powered by Deepseek."></div>
+        <div class="field"><label>品牌标识方式</label>
+          <select id="brand-mode">
+            <option value="text">文字标识</option>
+            <option value="image">自定义图片</option>
+            <option value="none">关闭品牌标识</option>
+          </select>
+        </div>
+        <div class="field" id="brand-text-row"><label>文字标识（1-4 个字符）</label><input id="brand-mark" maxlength="4" placeholder="G"></div>
+        <div class="field" id="brand-image-row" hidden>
+          <label>品牌图片（PNG/JPG/GIF/WebP/BMP，最大 1MB）</label>
+          <input id="brand-icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp">
+          <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+            <button class="btn small" id="btn-upload-brand-icon" type="button">上传图片</button>
+            <button class="btn small danger" id="btn-delete-brand-icon" type="button">删除图片</button>
+            <span class="hint" id="brand-icon-hint"></span>
+          </div>
+        </div>
+        <div class="field"><label>品牌色</label><input id="brand-color" type="color" value="#4d6bfe" style="width:90px;padding:4px"></div>
+        <p class="panel-sub">仅支持纯文本，不支持 HTML。修改后登录页、聊天侧边栏和管理后台会同步更新。</p>
+        <div style="display:flex;align-items:center;gap:12px;margin:14px 0">
+          <div id="brand-preview-mark" style="width:42px;height:42px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#4d6bfe;color:#fff;font-weight:700;font-size:20px;background-size:cover;background-position:center">G</div>
+          <div><strong id="brand-preview-title">GuGuAI</strong><div class="hint" id="brand-preview-subtitle">Powered by Deepseek.</div></div>
+        </div>
+        <button class="btn primary" id="btn-save-branding">保存自定义网页</button>
+        <div class="error-text" id="branding-msg" style="margin-top:10px"></div>
+      </div>
+    </section>
+
+    <!-- 存储管理 -->
+    <section data-panel="storage" hidden>
+      <div class="page-head">
+        <div>
+          <h2>存储管理</h2>
+          <p>数据库、文件缓冲区与文本存储的容量和文件</p>
+        </div>
+        <button class="btn small" id="btn-refresh-storage">刷新</button>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="label">数据库</div><div class="value" id="st-db">-</div><div class="sub" id="st-db-sub">-</div></div>
+        <div class="stat"><div class="label">文件缓冲区</div><div class="value" id="st-buffer">-</div><div class="sub" id="st-buffer-sub">-</div></div>
+        <div class="stat"><div class="label">文本存储</div><div class="value" id="st-text">-</div><div class="sub" id="st-text-sub">-</div></div>
+      </div>
+
+      <div class="panel panel-pad" style="max-width:780px;margin-bottom:18px">
+        <h3>容量上限</h3>
+        <p class="panel-sub">单位 MB。文件缓冲区默认 2048MB（2GB），数据库默认 4096MB（4GB），文本区默认 1024MB。</p>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px">
+          <div class="field"><label>数据库上限（MB）</label><input id="limit-db" type="number" min="128" step="128"></div>
+          <div class="field"><label>文件缓冲区上限（MB）</label><input id="limit-buffer" type="number" min="64" step="64"></div>
+          <div class="field"><label>文本存储上限（MB）</label><input id="limit-text" type="number" min="64" step="64"></div>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn primary" id="btn-save-limits">保存上限</button>
+          <button class="btn" id="btn-vacuum">释放数据库空间（VACUUM）</button>
+        </div>
+        <div class="error-text" id="storage-msg" style="margin-top:10px"></div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-pad">
+          <div class="toolbar">
+            <select id="file-bucket">
+              <option value="">全部文件</option>
+              <option value="buffer">文件缓冲区</option>
+              <option value="text">文本存储</option>
+            </select>
+            <button class="btn small" id="btn-filter-files">筛选</button>
+            <span class="grow"></span>
+            <span class="hint" id="file-total"></span>
+          </div>
+          <div class="toolbar" style="margin-bottom:8px">
+            <span class="hint" id="files-selected-count">未选择文件</span>
+            <span class="grow"></span>
+            <button class="btn small danger" id="btn-delete-selected-files" disabled>删除选中文件</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:34px"><input type="checkbox" id="files-select-all" aria-label="全选文件"></th><th>ID</th><th>用户</th><th>区域</th><th>文件名</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead>
+              <tbody id="storage-body"><tr><td colspan="8" class="empty">加载中…</td></tr></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <div class="modal-head">
+      <h3 id="modal-title">标题</h3>
+      <button class="icon-btn" data-close aria-label="关闭">×</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-foot" id="modal-foot"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  var state = { users: [], me: null, keyInfo: null };
+
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  function escapeHtml(value) {
+    return String(value == null ? "" : value).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function fmtTime(iso) {
+    if (!iso) return "-";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var pad = function (n) { return String(n).padStart(2, "0"); };
+    return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " +
+      pad(d.getHours()) + ":" + pad(d.getMinutes());
+  }
+
+  var toastTimer = null;
+  function toast(message, isError) {
+    var el = $("#toast");
+    el.textContent = message;
+    el.className = "toast show" + (isError ? " err" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.className = "toast"; }, 2600);
+  }
+
+  async function api(path, options) {
+    options = options || {};
+    var init = { method: options.method || "GET", headers: {}, credentials: "same-origin" };
+    if (options.body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(options.body);
+    }
+    var res = await fetch(path, init);
+    var data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (res.status === 401) { location.replace("/login"); throw new Error("未登录"); }
+    if (res.status === 403) { toast(data.detail || "没有权限", true); throw new Error(data.detail || "没有权限"); }
+    if (!res.ok) { throw new Error(data.detail || ("请求失败（HTTP " + res.status + "）")); }
+    return data;
+  }
+
+  // ---------------- 导航 ----------------
+  function switchView(name) {
+    $all(".nav-item").forEach(function (b) { b.classList.toggle("active", b.dataset.view === name); });
+    $all("[data-panel]").forEach(function (p) { p.hidden = p.dataset.panel !== name; });
+    if (name === "users") loadUsers();
+    if (name === "apikey") loadKey();
+    if (name === "conversations") loadConversations();
+    if (name === "audit") loadAudit();
+    if (name === "branding") loadBranding();
+    if (name === "storage") loadStorage();
+    if (name === "overview") loadOverview();
+  }
+  $all(".nav-item").forEach(function (b) {
+    b.addEventListener("click", function () { switchView(b.dataset.view); });
+  });
+
+  // ---------------- 概览 ----------------
+  async function loadOverview() {
+    try {
+      var data = await api("/api/admin/overview");
+      var s = data.stats;
+      $("#s-users").textContent = s.users;
+      $("#s-active").textContent = "启用 " + s.active_users + " 个";
+      $("#s-convs").textContent = s.conversations;
+      $("#s-msgs").textContent = s.messages;
+      $("#s-today").textContent = "今日新增 " + s.messages_today + " 条";
+      $("#s-key").textContent = data.api_key.configured ? "已配置" : "未配置";
+      $("#s-key").className = "value";
+      $("#s-key-src").textContent = data.api_key.configured
+        ? (data.api_key.source === "env" ? "来源：环境变量" : "来源：后台配置")
+        : "请在 API Key 页面配置";
+      $("#i-upstream").textContent = data.upstream_base;
+      $("#i-ttl").textContent = data.session_ttl_hours + " 小时";
+      $("#i-web").textContent = data.web_dir;
+      $("#i-now").textContent = new Date().toLocaleString("zh-CN");
+      $("#key-warning").style.display = data.api_key.configured ? "none" : "block";
+    } catch (e) { toast(e.message, true); }
+  }
+
+  // ---------------- 用户 ----------------
+  async function loadUsers() {
+    try {
+      var data = await api("/api/admin/users");
+      state.users = data.users;
+      renderUsers();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function renderUsers() {
+    var keyword = ($("#user-search").value || "").trim().toLowerCase();
+    var rows = state.users.filter(function (u) {
+      return !keyword || u.username.toLowerCase().indexOf(keyword) >= 0;
+    });
+    var body = $("#users-body");
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="7" class="empty">暂无用户</td></tr>';
+      return;
+    }
+    body.innerHTML = rows.map(function (u) {
+      return "<tr>" +
+        "<td><strong>" + escapeHtml(u.username) + "</strong>" + (state.me && state.me.id === u.id ? ' <span class="hint">(我)</span>' : "") + "</td>" +
+        '<td><span class="badge ' + (u.role === "admin" ? "admin" : "user") + '">' + (u.role === "admin" ? "管理员" : "普通用户") + "</span></td>" +
+        '<td><span class="badge ' + (u.is_active ? "on" : "off") + '">' + (u.is_active ? "启用" : "已禁用") + "</span></td>" +
+        "<td>" + u.conversations + "</td>" +
+        "<td>" + u.messages + "</td>" +
+        "<td>" + escapeHtml(fmtTime(u.last_login_at)) + "</td>" +
+        '<td><div class="actions">' +
+        '<button class="btn small" data-edit="' + u.id + '">编辑</button>' +
+        '<button class="btn small" data-reset="' + u.id + '">重置密码</button>' +
+        (state.me && String(state.me.id) === String(u.id) ? '' : '<button class="btn small danger" data-delete="' + u.id + '">删除</button>') +
+        "</div></td></tr>";
+    }).join("");
+
+    $all("[data-edit]", body).forEach(function (b) {
+      b.addEventListener("click", function () { openUserModal("edit", findUser(b.dataset.edit)); });
+    });
+    $all("[data-reset]", body).forEach(function (b) {
+      b.addEventListener("click", function () { resetPassword(findUser(b.dataset.reset)); });
+    });
+    $all("[data-delete]", body).forEach(function (b) {
+      b.addEventListener("click", function () { removeUser(findUser(b.dataset.delete)); });
+    });
+  }
+
+  function findUser(id) {
+    id = String(id);
+    return state.users.filter(function (u) { return String(u.id) === id; })[0];
+  }
+
+  function openModal(title, bodyHtml, footHtml, wide) {
+    $("#modal-title").textContent = title;
+    $("#modal-body").innerHTML = bodyHtml;
+    $("#modal-foot").innerHTML = footHtml;
+    $("#modal").className = "modal" + (wide ? " wide" : "");
+    $("#overlay").classList.add("open");
+  }
+  function closeModal() { $("#overlay").classList.remove("open"); }
+  $("#overlay").addEventListener("click", function (e) {
+    if (e.target === $("#overlay") || e.target.hasAttribute("data-close")) closeModal();
+  });
+
+  function openUserModal(mode, user) {
+    var isEdit = mode === "edit";
+    if (isEdit && !user) return;
+    var self = isEdit && state.me && String(state.me.id) === String(user.id);
+    var hasAdmin = state.users.some(function (u) { return u.role === "admin"; });
+    openModal(isEdit ? "编辑用户 · " + user.username : "新建用户",
+      '<div class="field"><label>用户名' + (self ? "（管理员可修改自己的用户名）" : "") + '</label><input id="f-username" ' + (isEdit && !self ? "disabled" : "") +
+      ' value="' + (isEdit ? escapeHtml(user.username) : "") + '" placeholder="2-64 位字母、数字、下划线"></div>' +
+      '<div class="field"><label>' + (isEdit ? "重置密码（留空表示不修改）" : "密码") + '</label>' +
+      '<input id="f-password" type="password" autocomplete="new-password" placeholder="至少 8 位"></div>' +
+      '<div class="field"><label>角色</label><select id="f-role">' +
+      '<option value="user">普通用户</option><option value="admin"' + (hasAdmin ? " disabled" : "") + '>管理员</option></select></div>' +
+      '<p class="panel-sub" style="margin-top:0">系统只允许一个管理员；管理员可修改自己的用户名，不能删除、降级或禁用自己。</p>' +
+      (isEdit ? '<div class="field"><label><input type="checkbox" id="f-active" ' +
+        (user.is_active ? "checked" : "") + ' style="height:auto;vertical-align:middle"> 启用该账号</label></div>' : "") +
+      '<div class="field"><label><input type="checkbox" id="f-must" style="height:auto;vertical-align:middle"> 下次登录要求修改密码</label></div>' +
+      '<div class="error-text" id="f-error"></div>',
+      '<button class="btn" data-close>取消</button><button class="btn primary" id="f-save">保存</button>');
+
+    $("#f-role").value = isEdit ? user.role : "user";
+    if (self) $("#f-role").disabled = true;
+    $("#f-must").checked = isEdit ? !!user.must_change_password : false;
+    $("#f-save").addEventListener("click", function () { saveUser(mode, user); });
+    if (!isEdit) setTimeout(function () { $("#f-username").focus(); }, 30);
+  }
+
+  async function saveUser(mode, user) {
+    var errorEl = $("#f-error");
+    errorEl.textContent = "";
+    var password = $("#f-password").value;
+    if (mode === "create" && password.length < 8) { errorEl.textContent = "密码至少 8 位"; return; }
+    if (password && password.length < 8) { errorEl.textContent = "密码至少 8 位"; return; }
+
+    try {
+      if (mode === "create") {
+        await api("/api/admin/users", {
+          method: "POST",
+          body: {
+            username: $("#f-username").value.trim(),
+            password: password,
+            role: $("#f-role").value,
+            must_change_password: $("#f-must").checked
+          }
+        });
+        toast("用户已创建");
+      } else {
+        var payload = { role: $("#f-role").value, is_active: $("#f-active").checked,
+          must_change_password: $("#f-must").checked };
+        var username = $("#f-username").value.trim();
+        if (username && username !== user.username) payload.username = username;
+        if (password) payload.password = password;
+        await api("/api/admin/users/" + user.id, { method: "PATCH", body: payload });
+        toast("用户已更新");
+      }
+      closeModal();
+      loadUsers();
+      loadOverview();
+    } catch (e) {
+      errorEl.textContent = e.message;
+    }
+  }
+
+  async function resetPassword(user) {
+    if (!user) return;
+    var pwd = prompt("为「" + user.username + "」设置新密码（至少 8 位）：");
+    if (pwd === null) return;
+    if (pwd.length < 8) { toast("密码至少 8 位", true); return; }
+    try {
+      await api("/api/admin/users/" + user.id, {
+        method: "PATCH",
+        body: { password: pwd, must_change_password: true }
+      });
+      toast("密码已重置，该用户已下线");
+      loadUsers();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function removeUser(user) {
+    if (!user) return;
+    if (!confirm("确定删除用户「" + user.username + "」？其所有会话记录也会被删除，且不可恢复。")) return;
+    try {
+      await api("/api/admin/users/" + user.id, { method: "DELETE" });
+      toast("用户已删除");
+      loadUsers();
+      loadOverview();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  $("#btn-new-user").addEventListener("click", function () { openUserModal("create"); });
+  $("#btn-refresh-users").addEventListener("click", loadUsers);
+  $("#user-search").addEventListener("input", renderUsers);
+
+  // ---------------- API Key ----------------
+  function renderKey(data) {
+    state.keyInfo = data;
+    $("#key-configured").textContent = data.configured ? "是" : "否";
+    $("#key-source").textContent = data.source === "env" ? "环境变量 DEEPSEEK_API_KEY" :
+      (data.source === "database" ? "后台配置（加密存储）" : "未配置");
+    $("#key-masked").textContent = data.masked || "-";
+    $("#key-status-text").textContent = data.configured
+      ? "API Key 已就绪，普通用户可以直接聊天。"
+      : "尚未配置 API Key，普通用户聊天会收到「服务未配置」提示。";
+    $("#key-warning").style.display = data.configured ? "none" : "block";
+    $("#s-key").textContent = data.configured ? "已配置" : "未配置";
+    $("#s-key-src").textContent = data.configured ? "来源：" + (data.source === "env" ? "环境变量" : "后台配置") : "请在 API Key 页面配置";
+  }
+
+  async function loadKey() {
+    try { renderKey(await api("/api/admin/apikey")); } catch (e) { toast(e.message, true); }
+  }
+
+  $("#btn-save-key").addEventListener("click", async function () {
+    var input = $("#apikey-input");
+    var msg = $("#key-msg");
+    msg.className = "error-text";
+    msg.textContent = "";
+    var key = input.value.trim();
+    if (!key) { msg.textContent = "请输入 API Key"; return; }
+    this.disabled = true;
+    try {
+      var data = await api("/api/admin/apikey", { method: "PUT", body: { api_key: key } });
+      input.value = "";
+      renderKey(data);
+      msg.className = "success-text";
+      msg.textContent = "已保存，立即生效";
+      toast("API Key 已保存");
+      loadOverview();
+    } catch (e) {
+      msg.textContent = e.message;
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  $("#btn-test-key").addEventListener("click", async function () {
+    var msg = $("#key-msg");
+    var candidate = $("#apikey-input").value.trim();
+    msg.className = "error-text";
+    msg.textContent = "正在测试…";
+    this.disabled = true;
+    try {
+      var data = await api("/api/admin/apikey/test", {
+        method: "POST",
+        body: { api_key: candidate || null }
+      });
+      if (data.ok) {
+        msg.className = "success-text";
+        msg.textContent = "连接成功，Key 可用";
+      } else {
+        msg.textContent = "测试失败：" + (data.detail || "未知错误");
+      }
+    } catch (e) {
+      msg.textContent = e.message;
+    } finally {
+      this.disabled = false;
+    }
+  });
+
+  $("#btn-clear-key").addEventListener("click", async function () {
+    if (!confirm("确定清除后台保存的 API Key？清除后若未设置环境变量，用户将无法聊天。")) return;
+    try {
+      var data = await api("/api/admin/apikey", { method: "DELETE" });
+      renderKey(data);
+      $("#key-msg").className = "success-text";
+      $("#key-msg").textContent = "已清除后台保存的 Key";
+      loadOverview();
+    } catch (e) { toast(e.message, true); }
+  });
+
+  // ---------------- 会话记录 ----------------
+  var convOffset = 0;
+  var convLimit = 50;
+
+  async function loadConversations() {
+    var userId = $("#conv-user").value.trim();
+    var query = "?limit=" + convLimit + "&offset=" + convOffset + (userId ? "&user_id=" + encodeURIComponent(userId) : "");
+    try {
+      var data = await api("/api/admin/conversations" + query);
+      $("#conv-total").textContent = "共 " + data.total + " 条";
+      var body = $("#convs-body");
+      if (!data.conversations.length) {
+        body.innerHTML = '<tr><td colspan="7" class="empty">暂无会话记录</td></tr>';
+        updateConvBulk();
+        return;
+      }
+      body.innerHTML = data.conversations.map(function (c) {
+        return "<tr>" +
+          '<td><input type="checkbox" data-conv-check="' + c.id + '" aria-label="选择会话"></td>' +
+          "<td>" + c.id + "</td>" +
+          "<td>" + escapeHtml(c.username) + "</td>" +
+          "<td>" + escapeHtml(c.title) + "</td>" +
+          "<td>" + c.message_count + "</td>" +
+          "<td>" + escapeHtml(fmtTime(c.updated_at)) + "</td>" +
+          '<td><div class="actions"><button class="btn small" data-conv="' + c.id + '">查看</button>' +
+          '<button class="btn small danger" data-del-conv="' + c.id + '">删除</button></div></td>' +
+          "</tr>";
+      }).join("");
+      $all("[data-conv-check]", body).forEach(function (box) {
+        box.addEventListener("change", updateConvBulk);
+      });
+      updateConvBulk();
+      $all("[data-conv]", body).forEach(function (b) {
+        b.addEventListener("click", function () { openConversation(b.dataset.conv); });
+      });
+      $all("[data-del-conv]", body).forEach(function (b) {
+        b.addEventListener("click", async function () {
+          if (!confirm("确定删除这条服务端会话？将同时删除同步快照；若用户本地仍保留副本，下次同步可能恢复。")) return;
+          try {
+            await api("/api/admin/conversations/" + b.dataset.delConv, { method: "DELETE" });
+            toast("会话已删除");
+            loadConversations();
+            loadStorage();
+          } catch (e) { toast(e.message, true); }
+        });
+      });
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function updateConvBulk() {
+    var boxes = $all("[data-conv-check]", $("#convs-body"));
+    var selected = boxes.filter(function (b) { return b.checked; });
+    $("#convs-selected-count").textContent = selected.length ? "已选择 " + selected.length + " 个会话" : "未选择会话";
+    $("#btn-delete-selected-convs").disabled = selected.length === 0;
+    var all = $("#convs-select-all");
+    all.checked = boxes.length > 0 && selected.length === boxes.length;
+    all.indeterminate = selected.length > 0 && selected.length < boxes.length;
+  }
+
+  $("#convs-select-all").addEventListener("change", function () {
+    var checked = this.checked;
+    $all("[data-conv-check]", $("#convs-body")).forEach(function (b) { b.checked = checked; });
+    updateConvBulk();
+  });
+
+  $("#btn-delete-selected-convs").addEventListener("click", async function () {
+    var ids = $all("[data-conv-check]", $("#convs-body")).filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.convCheck; });
+    if (!ids.length) return;
+    if (!confirm("确定删除选中的 " + ids.length + " 个会话？将同时删除服务端快照和文件，且不可恢复。")) return;
+    this.disabled = true;
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        await api("/api/admin/conversations/" + ids[i], { method: "DELETE" });
+      }
+      toast("已删除 " + ids.length + " 个会话");
+      loadConversations();
+      loadStorage();
+    } catch (e) { toast(e.message, true); } finally { this.disabled = false; updateConvBulk(); }
+  });
+
+  function contentToText(content) {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map(function (b) {
+        if (!b || typeof b !== "object") return "";
+        if (b.type === "text") return b.text || "";
+        if (b.type === "thinking") return "【思考过程】\n" + (b.thinking || "");
+        if (b.type === "tool_use") return "【工具调用】" + (b.name || "") + (b.input ? " " + JSON.stringify(b.input) : "");
+        if (b.type === "file") return "【附件】" + (b.name || "");
+        if (b.type === "image") return "【图片】";
+        if (b.type === "document") return "【文档】";
+        return "";
+      }).filter(Boolean).join("\n\n");
+    }
+    try { return JSON.stringify(content); } catch (e) { return ""; }
+  }
+
+  async function openConversation(id) {
+    openModal("会话详情 #" + id, '<div class="empty">加载中…</div>', '<button class="btn" data-close>关闭</button>', true);
+    try {
+      var conv = await api("/api/admin/conversations/" + id);
+      var html = '<div class="kv" style="margin-bottom:16px">' +
+        '<div class="k">用户</div><div>' + escapeHtml(conv.username) + '（ID ' + conv.user_id + '）</div>' +
+        '<div class="k">标题</div><div>' + escapeHtml(conv.title) + '</div>' +
+        '<div class="k">模型</div><div class="mono">' + escapeHtml(conv.model || "-") + '</div>' +
+        '<div class="k">消息数</div><div>' + conv.message_count + '</div>' +
+        '<div class="k">创建时间</div><div>' + escapeHtml(fmtTime(conv.created_at)) + '</div>' +
+        "</div>";
+      html += conv.messages.map(function (m) {
+        var text = contentToText(m.content);
+        return '<div class="msg ' + (m.role === "user" ? "user" : "assistant") + '">' +
+          '<div class="who">' + (m.role === "user" ? "用户" : "助手") +
+          ' · ' + escapeHtml(fmtTime(m.created_at)) +
+          (m.tokens_out ? ' · 输出 ' + m.tokens_out + ' tokens' : "") + "</div>" +
+          '<div class="bubble">' + escapeHtml(text || "（空）") + "</div></div>";
+      }).join("");
+      $("#modal-body").innerHTML = html;
+    } catch (e) {
+      $("#modal-body").innerHTML = '<div class="empty">' + escapeHtml(e.message) + "</div>";
+    }
+  }
+
+  $("#btn-refresh-convs").addEventListener("click", loadConversations);
+  $("#btn-filter-convs").addEventListener("click", function () { convOffset = 0; loadConversations(); });
+
+  // ---------------- 审计 ----------------
+  async function loadAudit() {
+    try {
+      var data = await api("/api/admin/audit?limit=200");
+      var body = $("#audit-body");
+      if (!data.logs.length) { body.innerHTML = '<tr><td colspan="5" class="empty">暂无日志</td></tr>'; return; }
+      body.innerHTML = data.logs.map(function (l) {
+        return "<tr><td>" + escapeHtml(fmtTime(l.created_at)) + "</td>" +
+          "<td>" + escapeHtml(l.username || "-") + "</td>" +
+          "<td class=\"mono\">" + escapeHtml(l.action) + "</td>" +
+          "<td>" + escapeHtml(l.detail || "-") + "</td>" +
+          "<td class=\"mono\">" + escapeHtml(l.ip || "-") + "</td></tr>";
+      }).join("");
+    } catch (e) { toast(e.message, true); }
+  }
+  $("#btn-refresh-audit").addEventListener("click", loadAudit);
+
+
+  // ---------------- 自定义网页 ----------------
+  function renderBrandingPreview(data) {
+    var mode = data.mark_mode || "text";
+    var markEl = $("#brand-preview-mark");
+    markEl.textContent = data.mark || "G";
+    markEl.style.fontSize = (data.mark || "G").length > 2 ? "13px" : "";
+    markEl.style.background = data.color || "#4d6bfe";
+    markEl.style.backgroundImage = "";
+    markEl.style.backgroundSize = "cover";
+    markEl.style.backgroundPosition = "center";
+    markEl.style.display = mode === "none" ? "none" : "flex";
+    if (mode === "image" && data.mark_image) {
+      markEl.textContent = "";
+      markEl.style.backgroundImage = "url(" + JSON.stringify(data.mark_image) + ")";
+    }
+    $("#brand-mode").value = mode;
+    $("#brand-text-row").hidden = mode !== "text";
+    $("#brand-image-row").hidden = mode !== "image";
+    $("#brand-icon-hint").textContent = data.has_icon ? "已上传品牌图片" : "尚未上传图片";
+    $("#brand-preview-title").textContent = data.title || "GuGuAI";
+    $("#brand-preview-subtitle").textContent = data.subtitle || "";
+    var root = document.documentElement;
+    root.style.setProperty("--brand", data.color || "#4d6bfe");
+    root.style.setProperty("--brand-soft", (data.color || "#4d6bfe") + "22");
+    var brand = document.querySelector(".sidebar .brand");
+    if (brand) {
+      brand.querySelector(".logo-mark").textContent = data.mark || "G";
+      brand.querySelector("strong").textContent = (data.title || "GuGuAI") + " 管理后台";
+      brand.querySelector("span").textContent = data.subtitle || "";
+    }
+  }
+
+  async function loadBranding() {
+    try {
+      var data = await api("/api/admin/branding");
+      $("#brand-title").value = data.title || "";
+      $("#brand-subtitle").value = data.subtitle || "";
+      $("#brand-mark").value = data.mark || "";
+      $("#brand-color").value = data.color || "#4d6bfe";
+      $("#brand-icon-file").value = "";
+      renderBrandingPreview(data);
+    } catch (e) { toast(e.message, true); }
+  }
+
+  $("#btn-save-branding").addEventListener("click", async function () {
+    var msg = $("#branding-msg");
+    msg.className = "error-text";
+    msg.textContent = "";
+    var body = {
+      title: $("#brand-title").value.trim(),
+      subtitle: $("#brand-subtitle").value.trim(),
+      mark: $("#brand-mark").value.trim(),
+      color: $("#brand-color").value,
+      mark_mode: $("#brand-mode").value
+    };
+    if (!body.title) { msg.textContent = "主标题不能为空"; return; }
+    if (body.mark_mode === "text" && !body.mark) { msg.textContent = "文字品牌标识不能为空"; return; }
+    if (!/^#[0-9a-fA-F]{6}$/.test(body.color)) { msg.textContent = "品牌色格式不正确"; return; }
+    this.disabled = true;
+    try {
+      var data = await api("/api/admin/branding", { method: "PUT", body: body });
+      renderBrandingPreview(data);
+      msg.className = "success-text";
+      msg.textContent = "已保存，刷新页面后全局生效";
+      toast("自定义网页已保存");
+    } catch (e) { msg.textContent = e.message; } finally { this.disabled = false; }
+  });
+
+  $("#brand-mode").addEventListener("change", function () {
+    var mode = this.value;
+    $("#brand-text-row").hidden = mode !== "text";
+    $("#brand-image-row").hidden = mode !== "image";
+    renderBrandingPreview({
+      title: $("#brand-title").value,
+      subtitle: $("#brand-subtitle").value,
+      mark: $("#brand-mark").value,
+      color: $("#brand-color").value,
+      mark_mode: mode,
+      mark_image: $("#brand-preview-mark").style.backgroundImage.replace(/^url\((.*)\)$/, "$1").replace(/^"|"$/g, ""),
+      has_icon: $("#brand-icon-hint").textContent.indexOf("已上传") === 0
+    });
+  });
+
+  $("#btn-upload-brand-icon").addEventListener("click", async function () {
+    var input = $("#brand-icon-file");
+    if (!input.files || !input.files[0]) { toast("请选择图片", true); return; }
+    if (input.files[0].size > 1024 * 1024) { toast("图片不能超过 1MB", true); return; }
+    var form = new FormData();
+    form.append("file", input.files[0]);
+    this.disabled = true;
+    try {
+      var res = await fetch("/api/admin/branding/icon", { method: "POST", body: form, credentials: "same-origin" });
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) throw new Error(data.detail || "上传失败");
+      $("#brand-mode").value = "image";
+      renderBrandingPreview(data);
+      toast("品牌图片已上传");
+    } catch (e) { toast(e.message, true); } finally { this.disabled = false; }
+  });
+
+  $("#btn-delete-brand-icon").addEventListener("click", async function () {
+    if (!confirm("确定删除品牌图片？")) return;
+    this.disabled = true;
+    try {
+      var data = await api("/api/admin/branding/icon", { method: "DELETE" });
+      renderBrandingPreview(data);
+      toast("品牌图片已删除");
+    } catch (e) { toast(e.message, true); } finally { this.disabled = false; }
+  });
+
+  // ---------------- 存储管理 ----------------
+  function fmtBytes(n) {
+    if (!n && n !== 0) return "-";
+    if (n < 1024) return n + " B";
+    var units = ["KB", "MB", "GB", "TB"], v = n / 1024, i = 0;
+    while (v >= 1024 && i < units.length - 1) { v /= 1024; i++; }
+    return (v < 10 ? v.toFixed(1) : Math.round(v)) + " " + units[i];
+  }
+
+  function pct(used, limit) {
+    if (!limit) return 0;
+    return Math.max(0, Math.min(100, used / limit * 100));
+  }
+
+  function renderStorage(data) {
+    state.storage = data;
+    var db = data.db, buf = data.buffer, txt = data.text;
+    $("#st-db").textContent = fmtBytes(db.used);
+    $("#st-db-sub").textContent = "上限 " + fmtBytes(db.limit) + " · " + pct(db.used, db.limit).toFixed(1) + "%";
+    $("#st-buffer").textContent = fmtBytes(buf.used);
+    $("#st-buffer-sub").textContent = "上限 " + fmtBytes(buf.limit) + " · " + buf.files + " 个文件";
+    $("#st-text").textContent = fmtBytes(txt.used);
+    $("#st-text-sub").textContent = "上限 " + fmtBytes(txt.limit) + " · " + txt.files + " 个文件";
+    if (document.activeElement !== $("#limit-db")) $("#limit-db").value = Math.round(db.limit / 1048576);
+    if (document.activeElement !== $("#limit-buffer")) $("#limit-buffer").value = Math.round(buf.limit / 1048576);
+    if (document.activeElement !== $("#limit-text")) $("#limit-text").value = Math.round(txt.limit / 1048576);
+    if (db.used >= db.limit) {
+      $("#storage-msg").className = "error-text";
+      $("#storage-msg").textContent = "数据库已达到上限，新消息会提示空间不足，请删除不用的会话后点击释放空间。";
+    }
+  }
+
+  async function loadStorage() {
+    try {
+      renderStorage(await api("/api/admin/storage"));
+      loadStorageFiles();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  async function loadStorageFiles() {
+    var bucket = $("#file-bucket").value;
+    var query = "?limit=100" + (bucket ? "&bucket=" + encodeURIComponent(bucket) : "");
+    try {
+      var data = await api("/api/admin/storage/files" + query);
+      $("#file-total").textContent = "共 " + data.total + " 个文件";
+      var body = $("#storage-body");
+      if (!data.files.length) {
+        body.innerHTML = '<tr><td colspan="8" class="empty">暂无文件</td></tr>';
+        updateFileBulk();
+        return;
+      }
+      body.innerHTML = data.files.map(function (f) {
+        return "<tr><td><input type=\"checkbox\" data-file-check=\"" + f.id + "\" aria-label=\"选择文件\"></td>" +
+          "<td class='mono'>" + escapeHtml(f.id.slice(0, 10)) + "…</td>" +
+          "<td>" + escapeHtml(f.username) + "</td>" +
+          "<td>" + (f.bucket === "text" ? "文本区" : "缓冲区") + "</td>" +
+          "<td title='" + escapeHtml(f.name) + "'>" + escapeHtml(f.name) + "</td>" +
+          "<td>" + fmtBytes(f.size) + "</td>" +
+          "<td>" + escapeHtml(fmtTime(new Date(f.createdAt).toISOString())) + "</td>" +
+          '<td><button class="btn small danger" data-del-file="' + f.id + '">删除</button></td></tr>';
+      }).join("");
+      $all("[data-file-check]", body).forEach(function (box) {
+        box.addEventListener("change", updateFileBulk);
+      });
+      updateFileBulk();
+      $all("[data-del-file]", body).forEach(function (b) {
+        b.addEventListener("click", async function () {
+          if (!confirm("确定删除该文件？引用它的会话将无法再预览/上传。")) return;
+          try {
+            await api("/api/admin/storage/files/" + b.dataset.delFile, { method: "DELETE" });
+            toast("文件已删除");
+            loadStorage();
+          } catch (e) { toast(e.message, true); }
+        });
+      });
+    } catch (e) { toast(e.message, true); }
+  }
+
+  function updateFileBulk() {
+    var boxes = $all("[data-file-check]", $("#storage-body"));
+    var selected = boxes.filter(function (b) { return b.checked; });
+    $("#files-selected-count").textContent = selected.length ? "已选择 " + selected.length + " 个文件" : "未选择文件";
+    $("#btn-delete-selected-files").disabled = selected.length === 0;
+    var all = $("#files-select-all");
+    all.checked = boxes.length > 0 && selected.length === boxes.length;
+    all.indeterminate = selected.length > 0 && selected.length < boxes.length;
+  }
+
+  $("#files-select-all").addEventListener("change", function () {
+    var checked = this.checked;
+    $all("[data-file-check]", $("#storage-body")).forEach(function (b) { b.checked = checked; });
+    updateFileBulk();
+  });
+
+  $("#btn-delete-selected-files").addEventListener("click", async function () {
+    var ids = $all("[data-file-check]", $("#storage-body")).filter(function (b) { return b.checked; }).map(function (b) { return b.dataset.fileCheck; });
+    if (!ids.length) return;
+    if (!confirm("确定删除选中的 " + ids.length + " 个文件？引用它们的会话将无法再预览。")) return;
+    this.disabled = true;
+    try {
+      for (var i = 0; i < ids.length; i++) {
+        await api("/api/admin/storage/files/" + ids[i], { method: "DELETE" });
+      }
+      toast("已删除 " + ids.length + " 个文件");
+      loadStorage();
+    } catch (e) { toast(e.message, true); } finally { this.disabled = false; updateFileBulk(); }
+  });
+
+  $("#btn-refresh-storage").addEventListener("click", loadStorage);
+  $("#btn-filter-files").addEventListener("click", loadStorageFiles);
+  $("#btn-save-limits").addEventListener("click", async function () {
+    var msg = $("#storage-msg");
+    msg.className = "error-text";
+    msg.textContent = "";
+    var body = {
+      dbMb: Number($("#limit-db").value),
+      bufferMb: Number($("#limit-buffer").value),
+      textMb: Number($("#limit-text").value)
+    };
+    if (!body.dbMb || !body.bufferMb || !body.textMb) { msg.textContent = "请填写有效的上限"; return; }
+    this.disabled = true;
+    try {
+      renderStorage(await api("/api/admin/storage", { method: "PUT", body: body }));
+      msg.className = "success-text";
+      msg.textContent = "上限已保存";
+      toast("容量上限已保存");
+    } catch (e) { msg.textContent = e.message; } finally { this.disabled = false; }
+  });
+  $("#btn-vacuum").addEventListener("click", async function () {
+    var msg = $("#storage-msg");
+    if (!confirm("VACUUM 会重建数据库文件并释放未使用空间，期间可能短暂变慢，继续？")) return;
+    this.disabled = true;
+    try {
+      var data = await api("/api/admin/storage/vacuum", { method: "POST" });
+      renderStorage(data);
+      msg.className = "success-text";
+      msg.textContent = "已释放空间：" + fmtBytes(data.before) + " → " + fmtBytes(data.after);
+      toast("数据库空间已释放");
+    } catch (e) { msg.textContent = e.message; } finally { this.disabled = false; }
+  });
+
+  // ---------------- 修改自己的密码 ----------------
+  $("#change-pw").addEventListener("click", function (e) {
+    e.preventDefault();
+    openModal("修改我的密码",
+      '<div class="field"><label>当前密码</label><input id="pw-current" type="password" autocomplete="current-password"></div>' +
+      '<div class="field"><label>新密码（至少 8 位）</label><input id="pw-new" type="password" autocomplete="new-password"></div>' +
+      '<div class="field"><label>确认新密码</label><input id="pw-confirm" type="password" autocomplete="new-password"></div>' +
+      '<div class="error-text" id="pw-error"></div>',
+      '<button class="btn" data-close>取消</button><button class="btn primary" id="pw-save">保存</button>');
+    $("#pw-save").addEventListener("click", async function () {
+      var err = $("#pw-error");
+      err.textContent = "";
+      var cur = $("#pw-current").value, next = $("#pw-new").value, confirm = $("#pw-confirm").value;
+      if (next.length < 8) { err.textContent = "新密码至少 8 位"; return; }
+      if (next !== confirm) { err.textContent = "两次输入的新密码不一致"; return; }
+      try {
+        await api("/api/auth/change-password", {
+          method: "POST",
+          body: { current_password: cur, new_password: next }
+        });
+        closeModal();
+        toast("密码已修改");
+      } catch (e2) { err.textContent = e2.message; }
+    });
+  });
+
+  // ---------------- 初始化 ----------------
+  (async function init() {
+    try {
+      state.me = await api("/api/auth/me");
+      if (!state.me || state.me.role !== "admin") { location.replace("/"); return; }
+    } catch (e) { return; }
+    await Promise.all([loadOverview(), loadUsers()]);
+    setInterval(function () { $("#i-now").textContent = new Date().toLocaleString("zh-CN"); }, 30000);
+  })();
+})();
+</script>
+</body>
+</html>

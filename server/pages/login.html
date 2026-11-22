@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>登录 · GuGuAI</title>
+<meta name="referrer" content="same-origin">
+<link rel="stylesheet" href="/ui/assets/app.css">
+<script src="/ui/assets/theme.js"></script>
+<script src="/ui/assets/branding.js" defer></script>
+</head>
+<body class="login-body">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="logo-mark" data-brand-mark>G</div>
+      <div>
+        <h1 data-brand-name>GuGuAI</h1>
+        <p class="sub" data-brand-subtitle>Powered by Deepseek.</p>
+      </div>
+    </div>
+
+    <form id="login-form" autocomplete="on">
+      <div class="field">
+        <label for="username">用户名</label>
+        <input id="username" name="username" type="text" autocomplete="username" required autofocus>
+      </div>
+      <div class="field">
+        <label for="password">密码</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+      </div>
+      <div class="error-text" id="error"></div>
+      <button class="btn primary" id="submit" type="submit">登 录</button>
+    </form>
+
+    <div class="login-foot">
+      账号由管理员统一分配。登录后即可使用聊天功能，服务端会保存对话记录并统一调用 DeepSeek API。
+    </div>
+  </div>
+
+  <div class="overlay" id="force-overlay">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-head">
+        <h3>首次登录，请修改密码</h3>
+      </div>
+      <div class="modal-body">
+        <p class="hint" style="margin-top:0">管理员要求你修改初始密码后才能使用聊天功能。</p>
+        <div class="field"><label>新密码（至少 8 位）</label><input id="force-new" type="password" autocomplete="new-password"></div>
+        <div class="field"><label>确认新密码</label><input id="force-confirm" type="password" autocomplete="new-password"></div>
+        <div class="error-text" id="force-error"></div>
+        <button class="btn primary" id="force-save" type="button" style="width:100%">保存并重新登录</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function () {
+  var form = document.getElementById("login-form");
+  var errorBox = document.getElementById("error");
+  var submit = document.getElementById("submit");
+  var pendingPassword = "";
+  var forceOverlay = document.getElementById("force-overlay");
+  var forceNew = document.getElementById("force-new");
+  var forceConfirm = document.getElementById("force-confirm");
+  var forceError = document.getElementById("force-error");
+  var forceSave = document.getElementById("force-save");
+
+  if (new URLSearchParams(location.search).get("changed") === "1") {
+    errorBox.className = "success-text";
+    errorBox.textContent = "密码已修改，请使用新密码重新登录。";
+  }
+
+  async function submitForcedChange() {
+    forceError.textContent = "";
+    var next = forceNew.value;
+    var confirm = forceConfirm.value;
+    if (next.length < 8) { forceError.textContent = "新密码至少 8 位"; return; }
+    if (next !== confirm) { forceError.textContent = "两次输入的新密码不一致"; return; }
+    if (next === pendingPassword) { forceError.textContent = "新密码不能与当前密码相同"; return; }
+    forceSave.disabled = true;
+    forceSave.textContent = "保存中…";
+    try {
+      var res = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ current_password: pendingPassword, new_password: next })
+      });
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) { forceError.textContent = data.detail || "修改失败"; return; }
+      await fetch("/api/auth/logout", { method: "POST" }).catch(function () {});
+      location.replace("/login?changed=1");
+    } catch (e) {
+      forceError.textContent = "网络错误，请稍后再试";
+    } finally {
+      forceSave.disabled = false;
+      forceSave.textContent = "保存并重新登录";
+    }
+  }
+  forceSave.addEventListener("click", function () { void submitForcedChange(); });
+
+  form.addEventListener("submit", async function (event) {
+    event.preventDefault();
+    errorBox.textContent = "";
+    errorBox.className = "error-text";
+    submit.disabled = true;
+    submit.textContent = "登录中…";
+    try {
+      var password = document.getElementById("password").value;
+      var res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: document.getElementById("username").value.trim(),
+          password: password
+        })
+      });
+      var data = {};
+      try { data = await res.json(); } catch (e) {}
+      if (!res.ok) {
+        errorBox.textContent = data.detail || "登录失败，请稍后再试";
+        return;
+      }
+      if (data.user && data.user.must_change_password) {
+        pendingPassword = password;
+        forceOverlay.classList.add("open");
+        forceNew.value = "";
+        forceConfirm.value = "";
+        setTimeout(function () { forceNew.focus(); }, 50);
+        return;
+      }
+      var next = new URLSearchParams(location.search).get("next");
+      if (next && next.charAt(0) === "/" && next.charAt(1) !== "/") {
+        location.replace(next);
+      } else if (data.user && data.user.role === "admin") {
+        location.replace("/admin");
+      } else {
+        location.replace("/");
+      }
+    } catch (e) {
+      errorBox.textContent = "网络错误，无法连接服务器";
+    } finally {
+      submit.disabled = false;
+      submit.textContent = "登 录";
+    }
+  });
+})();
+</script>
+</body>
+</html>

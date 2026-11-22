@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>会话记录 · GuGuAI</title>
+<meta name="referrer" content="same-origin">
+<link rel="stylesheet" href="/ui/assets/app.css">
+<script src="/ui/assets/theme.js"></script>
+<script src="/ui/assets/branding.js" defer></script>
+</head>
+<body>
+<main class="main" style="max-width:1280px;margin:0 auto">
+  <div class="page-head">
+    <div>
+      <h2>我的会话记录</h2>
+      <p>这些对话保存在服务器上，可在任意设备登录后查看</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <span class="hint" id="who">-</span>
+      <a class="btn small" href="/">返回聊天</a>
+      <a class="btn small" href="#" id="change-pw">修改密码</a>
+      <a class="btn small" href="/logout">退出登录</a>
+    </div>
+  </div>
+
+  <div class="hist-layout">
+    <div class="panel conv-list">
+      <div class="panel-pad" style="padding:14px 16px;border-bottom:1px solid var(--line)">
+        <input id="search" placeholder="搜索标题…" style="width:100%;height:34px;border:1px solid var(--line);border-radius:9px;padding:0 10px">
+      </div>
+      <div id="conv-list"><div class="empty">加载中…</div></div>
+    </div>
+
+    <div class="panel chat-view" id="chat-view">
+      <div class="empty">从左侧选择一个会话查看完整对话</div>
+    </div>
+  </div>
+</main>
+
+<div class="overlay" id="overlay">
+  <div class="modal" id="modal">
+    <div class="modal-head"><h3>修改我的密码</h3><button class="icon-btn" data-close>×</button></div>
+    <div class="modal-body">
+      <div class="field"><label>当前密码</label><input id="pw-current" type="password" autocomplete="current-password"></div>
+      <div class="field"><label>新密码（至少 8 位）</label><input id="pw-new" type="password" autocomplete="new-password"></div>
+      <div class="field"><label>确认新密码</label><input id="pw-confirm" type="password" autocomplete="new-password"></div>
+      <div class="error-text" id="pw-error"></div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn" data-close>取消</button>
+      <button class="btn primary" id="pw-save">保存</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var conversations = [];
+  var activeId = null;
+
+  function $(s) { return document.querySelector(s); }
+  function escapeHtml(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function fmt(iso) {
+    if (!iso) return "-";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var p = function (n) { return String(n).padStart(2, "0"); };
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) + " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+  var toastTimer = null;
+  function toast(msg, err) {
+    var el = $("#toast");
+    el.textContent = msg;
+    el.className = "toast show" + (err ? " err" : "");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.className = "toast"; }, 2500);
+  }
+
+  async function api(path, options) {
+    options = options || {};
+    var init = { method: options.method || "GET", headers: {}, credentials: "same-origin" };
+    if (options.body !== undefined) {
+      init.headers["Content-Type"] = "application/json";
+      init.body = JSON.stringify(options.body);
+    }
+    var res = await fetch(path, init);
+    var data = {};
+    try { data = await res.json(); } catch (e) {}
+    if (res.status === 401) { location.replace("/login"); throw new Error("未登录"); }
+    if (!res.ok) throw new Error(data.detail || ("请求失败（HTTP " + res.status + "）"));
+    return data;
+  }
+
+  function contentToText(content) {
+    if (typeof content === "string") return content;
+    if (Array.isArray(content)) {
+      return content.map(function (b) {
+        if (!b || typeof b !== "object") return "";
+        if (b.type === "text") return b.text || "";
+        if (b.type === "thinking") return "【思考过程】\n" + (b.thinking || "");
+        if (b.type === "tool_use") return "【工具调用】" + (b.name || "");
+        if (b.type === "image") return "【图片】";
+        if (b.type === "document") return "【文档】";
+        return "";
+      }).filter(Boolean).join("\n\n");
+    }
+    try { return JSON.stringify(content); } catch (e) { return ""; }
+  }
+
+  function renderList() {
+    var keyword = ($("#search").value || "").trim().toLowerCase();
+    var rows = conversations.filter(function (c) {
+      return !keyword || (c.title || "").toLowerCase().indexOf(keyword) >= 0;
+    });
+    var box = $("#conv-list");
+    if (!rows.length) {
+      box.innerHTML = '<div class="empty">暂无会话记录</div>';
+      return;
+    }
+    box.innerHTML = rows.map(function (c) {
+      return '<div class="conv-item' + (String(c.id) === String(activeId) ? " active" : "") + '" data-id="' + c.id + '">' +
+        '<div class="t">' + escapeHtml(c.title) + "</div>" +
+        '<div class="m"><span>' + c.message_count + " 条消息</span><span>" + escapeHtml(fmt(c.updated_at)) + "</span></div>" +
+        "</div>";
+    }).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-id]"), function (el) {
+      el.addEventListener("click", function () { openConv(el.dataset.id); });
+    });
+  }
+
+  async function openConv(id) {
+    activeId = id;
+    renderList();
+    var view = $("#chat-view");
+    view.innerHTML = '<div class="empty">加载中…</div>';
+    try {
+      var conv = await api("/api/my/conversations/" + id);
+      var head = '<div style="margin-bottom:18px;padding-bottom:14px;border-bottom:1px solid var(--line)">' +
+        "<h3 style='margin:0 0 4px'>" + escapeHtml(conv.title) + "</h3>" +
+        '<div class="hint">' + escapeHtml(fmt(conv.created_at)) + " · " + conv.message_count + " 条消息 · 模型 " + escapeHtml(conv.model || "-") + "</div></div>";
+      var body = conv.messages.map(function (m) {
+        return '<div class="msg ' + (m.role === "user" ? "user" : "assistant") + '">' +
+          '<div class="who">' + (m.role === "user" ? "你" : "DeepSeek") + " · " + escapeHtml(fmt(m.created_at)) + "</div>" +
+          '<div class="bubble">' + escapeHtml(contentToText(m.content) || "（空）") + "</div></div>";
+      }).join("");
+      view.innerHTML = head + body;
+    } catch (e) {
+      view.innerHTML = '<div class="empty">' + escapeHtml(e.message) + "</div>";
+    }
+  }
+
+  async function load() {
+    try {
+      var me = await api("/api/auth/me");
+      $("#who").textContent = "当前用户：" + me.username;
+      var data = await api("/api/my/conversations");
+      conversations = data.conversations || [];
+      renderList();
+    } catch (e) { toast(e.message, true); }
+  }
+
+  $("#search").addEventListener("input", renderList);
+
+  $("#change-pw").addEventListener("click", function (e) {
+    e.preventDefault();
+    $("#overlay").classList.add("open");
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-close]"), function (b) {
+    b.addEventListener("click", function () { $("#overlay").classList.remove("open"); });
+  });
+  $("#overlay").addEventListener("click", function (e) {
+    if (e.target === $("#overlay")) $("#overlay").classList.remove("open");
+  });
+  $("#pw-save").addEventListener("click", async function () {
+    var err = $("#pw-error");
+    err.textContent = "";
+    var cur = $("#pw-current").value, next = $("#pw-new").value, confirm = $("#pw-confirm").value;
+    if (next.length < 8) { err.textContent = "新密码至少 8 位"; return; }
+    if (next !== confirm) { err.textContent = "两次输入的新密码不一致"; return; }
+    try {
+      await api("/api/auth/change-password", { method: "POST", body: { current_password: cur, new_password: next } });
+      $("#overlay").classList.remove("open");
+      toast("密码已修改");
+    } catch (e) { err.textContent = e.message; }
+  });
+
+  load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# runtime data
+server/data/
+server/data-test/
+server/.venv/
+server/.env
+server/*.log
+
+# python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# temp / local tooling
+.tmp/
+.tmp2/
+.tmp-edge/
+.lint_tmp/
+vendor_pkgs/
+.e2e-out.txt
+tools/
+edge-profile*/
+edge*.log

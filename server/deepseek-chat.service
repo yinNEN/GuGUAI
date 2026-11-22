@@ -1,0 +1,19 @@
+[Unit]
+Description=DeepSeek Chat Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deepseek
+Group=deepseek
+WorkingDirectory=/opt/deepseek-chat/server
+EnvironmentFile=/opt/deepseek-chat/server/.env
+ExecStart=/opt/deepseek-chat/server/.venv/bin/python /opt/deepseek-chat/server/run.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

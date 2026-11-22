@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>用户页面 · GuGuAI</title>
+<meta name="referrer" content="same-origin">
+<link rel="stylesheet" href="/ui/assets/app.css">
+<script src="/ui/assets/theme.js"></script>
+<script src="/ui/assets/branding.js" defer></script>
+</head>
+<body>
+<main class="main" style="max-width:820px;margin:0 auto">
+  <div class="page-head">
+    <div>
+      <h2>用户页面</h2>
+      <p>账号信息、修改密码与退出登录</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <a class="btn small" href="/">返回聊天</a>
+      <a class="btn small" href="/admin" id="admin-link" hidden>管理后台</a>
+    </div>
+  </div>
+
+  <div class="note" id="force-note" style="display:none;margin-bottom:18px">
+    管理员要求你修改初始密码。修改成功后会退出登录，请使用新密码重新登录。
+  </div>
+
+  <div class="panel panel-pad" style="margin-bottom:18px">
+    <h3>账号信息</h3>
+    <p class="panel-sub">账号由管理员统一创建，API Key 由服务器托管。</p>
+    <div class="kv">
+      <div class="k">用户名</div><div id="username">-</div>
+      <div class="k">角色</div><div id="role">-</div>
+      <div class="k">创建时间</div><div id="created">-</div>
+      <div class="k">最后登录</div><div id="last-login">-</div>
+    </div>
+  </div>
+
+  <div class="panel panel-pad">
+    <h3>修改密码</h3>
+    <p class="panel-sub">修改后其他设备上的会话会立即失效。</p>
+    <div class="field"><label>当前密码</label><input id="current" type="password" autocomplete="current-password"></div>
+    <div class="field"><label>新密码（至少 8 位）</label><input id="new" type="password" autocomplete="new-password"></div>
+    <div class="field"><label>确认新密码</label><input id="confirm" type="password" autocomplete="new-password"></div>
+    <div class="error-text" id="msg"></div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
+      <button class="btn primary" id="save">保存新密码</button>
+      <a class="btn danger" href="/logout">退出登录</a>
+    </div>
+  </div>
+</main>
+<script>
+(function () {
+  var msg = document.getElementById('msg')
+  var me = null
+  var force = new URLSearchParams(location.search).get('force') === '1'
+  if (force) document.getElementById('force-note').style.display = 'block'
+
+  function esc(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+    })
+  }
+  function fmt(v) {
+    if (!v) return '-'
+    var d = new Date(v)
+    return isNaN(d.getTime()) ? v : d.toLocaleString('zh-CN')
+  }
+
+  fetch('/api/auth/me', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+    .then(function (r) {
+      if (r.status === 401) { location.replace('/login?next=%2Fui%2Faccount'); throw new Error('401') }
+      if (!r.ok) throw new Error('failed')
+      return r.json()
+    })
+    .then(function (data) {
+      me = data
+      document.getElementById('username').textContent = data.username || '-'
+      document.getElementById('role').textContent = data.role === 'admin' ? '管理员' : '普通用户'
+      document.getElementById('created').textContent = fmt(data.created_at)
+      document.getElementById('last-login').textContent = fmt(data.last_login_at)
+      if (data.role === 'admin') document.getElementById('admin-link').hidden = false
+      if (force && !data.must_change_password) location.replace('/')
+    })
+    .catch(function () {})
+
+  document.getElementById('save').addEventListener('click', async function () {
+    msg.className = 'error-text'
+    msg.textContent = ''
+    var current = document.getElementById('current').value
+    var next = document.getElementById('new').value
+    var confirm = document.getElementById('confirm').value
+    if (next.length < 8) { msg.textContent = '新密码至少 8 位'; return }
+    if (next !== confirm) { msg.textContent = '两次输入的新密码不一致'; return }
+    this.disabled = true
+    try {
+      var res = await fetch('/api/auth/change-password', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ current_password: current, new_password: next })
+      })
+      var data = {}
+      try { data = await res.json() } catch (e) {}
+      if (!res.ok) { msg.textContent = data.detail || '修改失败'; return }
+      document.getElementById('current').value = ''
+      document.getElementById('new').value = ''
+      document.getElementById('confirm').value = ''
+      if (force) {
+        await fetch('/api/auth/logout', { method: 'POST' }).catch(function () {})
+        location.replace('/login?changed=1')
+        return
+      }
+      msg.className = 'success-text'
+      msg.textContent = '密码已修改'
+    } catch (e) {
+      msg.textContent = '网络错误，请稍后再试'
+    } finally {
+      this.disabled = false
+    }
+  })
+})()
+</script>
+</body>
+</html>
