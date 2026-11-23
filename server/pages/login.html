@@ -129,8 +129,17 @@
         return;
       }
       var next = new URLSearchParams(location.search).get("next");
-      if (next && next.charAt(0) === "/" && next.charAt(1) !== "/") {
-        location.replace(next);
+      var nextTarget = null;
+      if (next) {
+        try {
+          var parsed = new URL(next, location.origin);
+          if (parsed.origin === location.origin && parsed.pathname.charAt(0) === "/") {
+            nextTarget = parsed.pathname + parsed.search + parsed.hash;
+          }
+        } catch (e) {}
+      }
+      if (nextTarget) {
+        location.replace(nextTarget);
       } else if (data.user && data.user.role === "admin") {
         location.replace("/admin");
       } else {
