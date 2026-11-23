@@ -26,6 +26,7 @@ English | [简体中文](README.md)
 - **File buffer**: images/documents are uploaded first (32MB per file, 2GB total by default; oldest files are evicted when over the limit); other devices can preview from the server.
 - **Text preview**: txt/cpp/py/js/json and similar files in the composer or messages can be previewed; the server text area has a separate quota (1GB by default).
 - **Image preview**: images in messages and the composer open in an in-page modal using data URLs, without blob URLs or new tabs; shares the same modal as HTML/SVG previews.
+- **Inline PDF preview**: PDFs open in the shared preview modal using the browser-native PDF viewer; missing files show the standard unavailable message.
 - **HTML/SVG execution**: model-generated HTML/SVG code blocks and uploaded `.html`/`.svg` files can be previewed in an isolated iframe.
 - **Long text to attachment**: pasting more than 2000 characters/80 lines immediately converts the content to a `.txt` attachment named after its first line, while the composer keeps the prompt. Very long manually typed text is converted at send time and the model receives an instruction to read the attachment. Removing the attachment, cancelling, or leaving the page cleans up uploaded drafts; the server also purges unreferenced uploads older than 24 hours.
 - **Chat multi-select**: the entry is to the left of Settings at the bottom of the sidebar. In selection mode, a circular Select all control appears next to “Select chats”; batch deletion is supported.

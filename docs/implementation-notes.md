@@ -175,7 +175,9 @@ DeepSeek SSE ──⑥ 原样转发──> 浏览器（逐字输出）
 - **本地搜索**：只从 `useChatStore().sessions`、`sessionCache` 和 IndexedDB `db.loadSession` 读取，不调用搜索接口；仅匹配用户 `content` 与助手 `text` 块，字面大小写不敏感包含匹配。结果展示会话标题、匹配片段、日期；点击后选择会话并滚动/高亮对应 `data-message-id`。
 - **动画**：页面/会话切换淡入 `0.32s`；SPA 与管理后台 Modal 遮罩 `0.26s` + 内容 `0.32s` 缩放淡入；管理后台面板切换 `0.32s`；搜索结果行 `0.24s`；桌面侧边栏宽度/位移保持 `0.28s`；移动端抽屉滑入；均提供 `prefers-reduced-motion` 降级。
 
-## 文件缓冲、文本预览与存储管理
+## 文件缓冲、文本/PDF 预览与存储管理
+
+PDF 在统一 Modal 内用 blob URL 交给浏览器原生 PDF 查看器；Office 文件保持下载/外部打开，不进入页内预览。
 
 - **上传路径**：前端 `POST /api/files` 先把文件写入服务器，返回本服务文件 ID；聊天时服务端 `prepare_outbound_payload` 再把 ID 换成 DeepSeek `file_id`，必要时补传。这样浏览器不再直接调用 DeepSeek Files API。
 - **缓冲区**：非文本文件存 `server\data\files\`，默认上限 2GB；超过时按 `created_at` 删除最旧文件。单文件上限 32MB。
