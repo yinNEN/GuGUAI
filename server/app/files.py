@@ -43,6 +43,9 @@ TEXT_EXTS = {
 }
 
 TEXT_MIME_PREFIXES = ("text/",)
+FILE_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+TMP_FILE_RE = re.compile(r"^\.tmp-[0-9a-f]{32}$")
+
 TEXT_MIME_TYPES = {
     "application/json",
     "application/xml",
@@ -247,7 +250,9 @@ async def save_upload(user_id: int, upload: UploadFile, purpose: str | None = No
             "bucket": bucket,
             "sha256": digest.hexdigest(),
         }
-    except Exception:
+    except BaseException:
+        # Also clean up on asyncio.CancelledError (BaseException), which is
+        # raised when a client disconnects or the request task is cancelled.
         tmp_path.unlink(missing_ok=True)
         if target is not None:
             target.unlink(missing_ok=True)
@@ -317,12 +322,44 @@ def delete_user_files(user_id: int) -> None:
         conn.execute("DELETE FROM stored_files WHERE user_id = ?", (user_id,))
 
 
+def _purge_untracked_files(conn, cutoff: int) -> int:
+    """Remove stale disk files that have no row in stored_files.
+
+    This covers files left by a crash between the atomic rename and the DB
+    insert, and old .tmp-* uploads. Only UUID-shaped file names and temp names
+    are considered, so unrelated files in the data directory are untouched.
+    """
+    known_names = {
+        Path(str(row["path"] or "")).name
+        for row in conn.execute("SELECT path FROM stored_files").fetchall()
+    }
+    removed = 0
+    for base in (settings.files_dir, settings.text_dir):
+        if not base.exists():
+            continue
+        for entry in base.iterdir():
+            name = entry.name
+            if not (FILE_ID_RE.fullmatch(name) or TMP_FILE_RE.fullmatch(name)):
+                continue
+            if name in known_names:
+                continue
+            try:
+                if not entry.is_file() or entry.stat().st_mtime * 1000 >= cutoff:
+                    continue
+                entry.unlink(missing_ok=True)
+                removed += 1
+            except OSError:
+                continue
+    return removed
+
+
 def purge_orphan_files(max_age_seconds: int = 24 * 60 * 60) -> int:
     """Delete uploads that were never referenced by a session.
 
     Draft uploads are linked only when the session snapshot is pushed. A user
     who cancels or closes the page leaves no reference; keep a grace period so
-    an in-progress draft is not removed.
+    an in-progress draft is not removed. Stale temp/untracked files are also
+    collected after the same grace period.
     """
     cutoff = int(time.time() * 1000) - max_age_seconds * 1000
     removed = 0
@@ -341,6 +378,7 @@ def purge_orphan_files(max_age_seconds: int = 24 * 60 * 60) -> int:
                 pass
             conn.execute("DELETE FROM stored_files WHERE id = ?", (row["id"],))
             removed += 1
+        removed += _purge_untracked_files(conn, cutoff)
     if removed:
         reclaim_space()
     return removed
@@ -350,11 +388,20 @@ def delete_file(user_id: int, file_id: str, admin: bool = False) -> bool:
     record = get_file(user_id, file_id, admin=admin)
     if record is None:
         return False
-    try:
-        _record_path(record).unlink(missing_ok=True)
-    except OSError:
-        pass
     with db() as conn:
+        # A pagehide/draft cleanup must never remove an attachment that has
+        # already been linked into a session snapshot. Admins may force-delete.
+        if not admin:
+            referenced = conn.execute(
+                "SELECT 1 FROM session_files WHERE user_id = ? AND file_id = ? LIMIT 1",
+                (user_id, file_id),
+            ).fetchone()
+            if referenced is not None:
+                return False
+        try:
+            _record_path(record).unlink(missing_ok=True)
+        except OSError:
+            pass
         conn.execute("DELETE FROM session_files WHERE file_id = ?", (file_id,))
         conn.execute("DELETE FROM stored_files WHERE id = ?", (file_id,))
     return True
