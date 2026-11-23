@@ -9,12 +9,6 @@ distributed under the MIT License. The full text is included at
 
 Copyright (c) 2026 DeepSeek
 
-## Backend and deployment files
-
-Unless otherwise noted, the backend (`server/`), deployment scripts, and
-project documentation are licensed under the Apache License, Version 2.0.
-See the root `LICENSE` file.
-
 ## Dependencies
 
 Frontend and backend dependencies are not vendored in this repository except

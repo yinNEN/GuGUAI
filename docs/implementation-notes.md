@@ -177,7 +177,7 @@ DeepSeek SSE ──⑥ 原样转发──> 浏览器（逐字输出）
 
 ## 文件缓冲、文本/PDF 预览与存储管理
 
-PDF 在统一 Modal 内用 blob URL 交给浏览器原生 PDF 查看器；Office 文件保持下载/外部打开，不进入页内预览。
+PDF 在统一 Modal 内由 PDF.js 在 Worker 中解析并渲染到 Canvas，并叠加透明文字层以支持选择/复制；工具栏提供翻页、查找、缩放、单页/连续显示和文档原色开关。原生查看器仅作为用户主动切换的回退；Office 文件保持下载/外部打开，不进入页内预览。
 
 - **上传路径**：前端 `POST /api/files` 先把文件写入服务器，返回本服务文件 ID；聊天时服务端 `prepare_outbound_payload` 再把 ID 换成 DeepSeek `file_id`，必要时补传。这样浏览器不再直接调用 DeepSeek Files API。
 - **缓冲区**：非文本文件存 `server\data\files\`，默认上限 2GB；超过时按 `created_at` 删除最旧文件。单文件上限 32MB。
