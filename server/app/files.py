@@ -202,7 +202,12 @@ def _evict_bucket(conn, bucket: str, incoming: int) -> None:
 
 async def save_upload(user_id: int, upload: UploadFile, purpose: str | None = None) -> dict:
     name = sanitize_name(upload.filename or "file")
-    mime = (upload.content_type or mimetypes.guess_type(name)[0] or "").strip()[:200]
+    mime = (upload.content_type or "").strip()[:200]
+    # Browsers and imported archives sometimes send an empty/octet-stream MIME
+    # even for PDF/Office files. Prefer the extension-derived MIME in that case
+    # so the upstream Files API receives a parseable document type.
+    if not mime or mime.lower() == "application/octet-stream":
+        mime = (mimetypes.guess_type(name)[0] or mime or "").strip()[:200]
     purpose = (purpose or "").strip()[:64] or None
     text = is_text_file(name, mime)
     bucket = "text" if text else "buffer"

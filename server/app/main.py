@@ -164,6 +164,19 @@ def create_app() -> FastAPI:
         user = get_session_user(token_hash(token)) if token else None
         request.state.user = user
 
+        # A tab opened under another account can keep using a shared browser
+        # cookie after the user switches accounts in a second tab. Refuse writes
+        # and reads from that stale tab before it can push one user's chats into
+        # the other account. New clients send their expected user ID; older
+        # clients without the header remain compatible.
+        expected_user = request.headers.get("x-chat-user")
+        if user is not None and expected_user and expected_user != str(user["id"]):
+            return JSONResponse(
+                {"detail": "登录账号已切换，请刷新页面后继续"},
+                status_code=409,
+                headers={"X-Session-User-Changed": "1"},
+            )
+
         if path not in PUBLIC_PATHS and not path.startswith("/static/") and not path.startswith("/ui/assets/"):
             if user is None:
                 if _wants_json(path):

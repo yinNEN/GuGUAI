@@ -708,6 +708,52 @@ def backfill_session_files() -> None:
                     [(row["user_id"], row["client_id"], file_id) for file_id in file_ids],
                 )
 
+def _server_file_ids(value: Any) -> dict[str, str]:
+    """Map attachment object id -> server file id from a session snapshot."""
+    ids: dict[str, str] = {}
+
+    def walk(item: Any) -> None:
+        if isinstance(item, dict):
+            file_id = item.get("id")
+            server_id = item.get("serverId")
+            if isinstance(file_id, str) and isinstance(server_id, str) and server_id:
+                ids[file_id] = server_id
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+
+    walk(value)
+    return ids
+
+
+def _merge_missing_server_ids(incoming: dict, existing: dict) -> None:
+    """Keep file references when a stale device pushes an older file view.
+
+    A device can still hold the pre-import copy of a session (same file IDs,
+    serverId=null) while another device has imported and uploaded originals.
+    If that device sends a newer session update, the server must not interpret
+    the missing IDs as an intentional removal and delete the uploaded files.
+    """
+    known = _server_file_ids(existing)
+    if not known:
+        return
+
+    def walk(item: Any) -> None:
+        if isinstance(item, dict):
+            file_id = item.get("id")
+            if isinstance(file_id, str) and not item.get("serverId") and file_id in known:
+                item["serverId"] = known[file_id]
+            for child in item.values():
+                walk(child)
+        elif isinstance(item, list):
+            for child in item:
+                walk(child)
+
+    walk(incoming.get("messages") or [])
+
+
 def upsert_snapshot(user_id: int, session: dict, project: bool = True) -> bool:
     client_id = str(session["id"])
     title = str(session.get("title") or "")
@@ -716,12 +762,20 @@ def upsert_snapshot(user_id: int, session: dict, project: bool = True) -> bool:
     data = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
     with db() as conn:
         existing = conn.execute(
-            "SELECT updated_at FROM session_snapshots WHERE user_id = ? AND client_id = ?",
+            "SELECT updated_at, data FROM session_snapshots WHERE user_id = ? AND client_id = ?",
             (user_id, client_id),
         ).fetchone()
         # 多设备并发时不让较旧的快照覆盖较新的（相同时间戳允许更新标题等元数据）
         if existing is not None and updated < int(existing["updated_at"]):
             return False
+        if existing is not None:
+            try:
+                previous_session = json.loads(existing["data"])
+            except Exception:
+                previous_session = None
+            if isinstance(previous_session, dict):
+                _merge_missing_server_ids(session, previous_session)
+                data = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
         conn.execute(
             "INSERT INTO session_snapshots (user_id, client_id, title, data, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?) "
