@@ -8,7 +8,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 import httpx
 from fastapi import UploadFile
@@ -200,7 +200,14 @@ def _evict_bucket(conn, bucket: str, incoming: int) -> None:
         _remove_file(conn, row)
 
 
-async def save_upload(user_id: int, upload: UploadFile, purpose: str | None = None) -> dict:
+async def save_upload(
+    user_id: int,
+    upload: UploadFile,
+    purpose: str | None = None,
+    *,
+    max_bytes: int | None = None,
+    validator: Callable[[bytes], None] | None = None,
+) -> dict:
     name = sanitize_name(upload.filename or "file")
     mime = (upload.content_type or "").strip()[:200]
     # Browsers and imported archives sometimes send an empty/octet-stream MIME
@@ -219,6 +226,7 @@ async def save_upload(user_id: int, upload: UploadFile, purpose: str | None = No
     target: Path | None = None
     size = 0
     digest = hashlib.sha256()
+    limit = min(FILE_MAX_BYTES, max_bytes) if max_bytes is not None else FILE_MAX_BYTES
     try:
         with open(tmp_path, "wb") as out:
             while True:
@@ -226,12 +234,17 @@ async def save_upload(user_id: int, upload: UploadFile, purpose: str | None = No
                 if not chunk:
                     break
                 size += len(chunk)
-                if size > FILE_MAX_BYTES:
-                    raise FileTooLarge("单个文件不能超过 32MB")
+                if size > limit:
+                    raise FileTooLarge(f"单个文件不能超过 {max(1, limit // (1024 * 1024))}MB")
                 digest.update(chunk)
                 out.write(chunk)
         if size == 0:
             raise FileError("不能上传空文件")
+        if validator is not None:
+            try:
+                validator(tmp_path.read_bytes())
+            except ValueError as exc:
+                raise FileError(str(exc), 400) from exc
 
         file_id = uuid.uuid4().hex
         target = _path_for(file_id, bucket)

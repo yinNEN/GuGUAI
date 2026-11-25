@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import io
 import logging
+import wave
 from urllib.parse import quote
 
 import httpx
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, File, Request, UploadFile
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 from . import files as file_store
-from .common import require_user
+from .common import client_ip, require_user
 from .config import settings
-from .store import append_assistant, get_api_key, prepare_turn, snapshot_exists
+from .store import append_assistant, audit, get_api_key, prepare_turn, snapshot_exists
 from .upstream import (
     api_error,
     get_client,
@@ -40,6 +42,40 @@ def _check_length(request: Request) -> bool:
     except ValueError:
         length = 0
     return length <= settings.max_body_mb * 1024 * 1024
+
+ASR_MAX_BYTES = 8 * 1024 * 1024
+ASR_MAX_SECONDS = 120
+
+
+def _validate_wav(data: bytes) -> None:
+    """Reject malformed/non-WAV and overlong audio before forwarding it."""
+    if len(data) < 44 or data[:4] != b"RIFF" or data[8:12] != b"WAVE":
+        raise ValueError("录音必须是 WAV 文件")
+    try:
+        with wave.open(io.BytesIO(data), "rb") as audio:
+            if audio.getnchannels() != 1 or audio.getsampwidth() != 2:
+                raise ValueError("录音必须是单声道 16-bit WAV")
+            rate = audio.getframerate()
+            if rate <= 0 or audio.getnframes() / rate > ASR_MAX_SECONDS:
+                raise ValueError("录音时长超过 120 秒")
+    except (wave.Error, EOFError) as exc:
+        raise ValueError("WAV 文件格式无效") from exc
+
+
+async def _forward_asr_file(api_key: str, name: str, data: bytes) -> Response:
+    try:
+        upstream = await get_client().post(
+            upstream_url("/v1/tools/asr"),
+            headers={**upstream_headers(api_key), "Accept": "application/json"},
+            files={"file": (name, data, "audio/wav")},
+        )
+    except httpx.HTTPError as exc:
+        return api_error(502, f"无法连接 DeepSeek ASR：{exc}", "network_error")
+    return Response(
+        content=upstream.content,
+        status_code=upstream.status_code,
+        media_type=upstream.headers.get("content-type", "application/json"),
+    )
 
 
 @router.get("/models")
@@ -214,6 +250,49 @@ async def delete_file(file_id: str, request: Request):
 @router.post("/v1/tools/asr")
 async def asr(request: Request):
     return await _forward(request, "/v1/tools/asr")
+
+
+@router.post("/api/speech/asr")
+async def speech_asr(request: Request, file: UploadFile = File(...)):
+    """Save a voice recording in the file buffer, then forward that stored copy to ASR.
+
+    This mirrors normal attachment upload behavior: the recording is owned by the
+    logged-in user, quota checked, recorded in stored_files, and later collected by
+    the normal unreferenced-file cleanup. The browser never receives direct access
+    to the server API key.
+    """
+    user = require_user(request)
+    if not _check_length(request):
+        return _too_large_error()
+    api_key, _ = get_api_key()
+    if not api_key:
+        return _no_key_error()
+
+    try:
+        saved = await file_store.save_upload(
+            user["id"],
+            file,
+            "voice_input",
+            max_bytes=ASR_MAX_BYTES,
+            validator=_validate_wav,
+        )
+    except file_store.FileError as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=exc.status_code)
+    file_id = str(saved["id"])
+    if saved["bucket"] != "buffer":
+        file_store.delete_file(user["id"], file_id)
+        return api_error(400, "录音文件类型无效", "invalid_request_error")
+    try:
+        record, data = file_store.read_file_bytes(user["id"], file_id)
+    except file_store.FileError:
+        file_store.delete_file(user["id"], file_id)
+        return api_error(400, "录音文件无效", "invalid_request_error")
+
+    audit(user["id"], "voice_asr", f"{file_id} ({saved['size']} bytes)", client_ip(request))
+    response = await _forward_asr_file(api_key, saved["name"], data)
+    response.headers["X-Voice-File-Id"] = file_id
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @router.post("/v1/tools/tts")
