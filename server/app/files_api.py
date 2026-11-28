@@ -146,12 +146,24 @@ async def storage_files(
         row["createdAt"] = row.pop("created_at")
         row["lastUsed"] = row.pop("last_used")
         row["deepseekId"] = row.pop("deepseek_id")
+        row["references"] = int(row.pop("ref_count", 0) or 0)
     return {"files": rows, "total": total}
 
 
 @router.delete("/api/admin/storage/files/{file_id}")
 async def admin_delete_file(file_id: str, request: Request):
     admin = require_admin(request)
+    references = files.reference_count(file_id)
+    if references:
+        # 被会话引用的文件只能随会话删除/整体替换（delete_unreferenced_files）
+        # 或配额淘汰回收，后台不允许手动强制删除。
+        return JSONResponse(
+            {
+                "detail": f"该文件仍被 {references} 个对话引用，不能手动删除；"
+                "请先删除相关会话，由会话清理流程回收"
+            },
+            status_code=409,
+        )
     deleted = files.delete_file(admin["id"], file_id, admin=True)
     if deleted:
         audit(admin["id"], "storage_file_delete", file_id, client_ip(request))

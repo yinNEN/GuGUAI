@@ -225,6 +225,12 @@ async def _forward(request: Request, path: str):
     async def gen():
         try:
             async for chunk in upstream.aiter_raw():
+                # TTS/ASR/file downloads are streamed directly. If the user
+                # stops playback and the browser closes the response, close the
+                # upstream connection immediately instead of continuing to pull
+                # audio into a dead connection.
+                if await request.is_disconnected():
+                    break
                 yield chunk
         finally:
             await upstream.aclose()

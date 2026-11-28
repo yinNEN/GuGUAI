@@ -151,9 +151,10 @@ async def sync_rename(client_id: str, payload: RenameIn, request: Request):
     user = require_user(request)
     if not CLIENT_ID_RE.match(client_id):
         return _bad("会话 ID 不合法")
-    if not rename_snapshot(user["id"], client_id, payload.title.strip()):
+    revision = rename_snapshot(user["id"], client_id, payload.title.strip())
+    if revision is None:
         return JSONResponse({"detail": "会话不存在"}, status_code=404)
-    return {"ok": True}
+    return {"ok": True, "updatedAt": revision}
 
 
 @router.delete("/sessions/{client_id}")

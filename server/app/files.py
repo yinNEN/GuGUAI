@@ -456,6 +456,16 @@ def delete_unreferenced_files(user_id: int, file_ids: Iterable[str]) -> int:
     return removed
 
 
+def reference_count(file_id: str) -> int:
+    """该文件被多少个不同会话引用（session_files 中 distinct client_id）。"""
+    with db() as conn:
+        row = conn.execute(
+            "SELECT COUNT(DISTINCT client_id) FROM session_files WHERE file_id = ?",
+            (file_id,),
+        ).fetchone()
+    return int(row[0]) if row else 0
+
+
 def list_files(bucket: str | None = None, user_id: int | None = None, limit: int = 100, offset: int = 0) -> tuple[list[dict], int]:
     where: list[str] = []
     args: list[Any] = []
@@ -473,8 +483,13 @@ def list_files(bucket: str | None = None, user_id: int | None = None, limit: int
         rows = conn.execute(
             f"""
             SELECT f.id, f.user_id, u.username, f.bucket, f.name, f.size, f.mime,
-                   f.created_at, f.last_used, f.deepseek_id
+                   f.created_at, f.last_used, f.deepseek_id,
+                   COALESCE(refs.ref_count, 0) AS ref_count
             FROM stored_files f JOIN users u ON u.id = f.user_id
+            LEFT JOIN (
+                SELECT file_id, COUNT(DISTINCT client_id) AS ref_count
+                FROM session_files GROUP BY file_id
+            ) refs ON refs.file_id = f.id
             {clause}
             ORDER BY f.created_at DESC LIMIT ? OFFSET ?
             """,

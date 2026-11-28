@@ -176,6 +176,17 @@ async def update_user_api(user_id: int, payload: UserUpdateIn, request: Request)
     if not target:
         return JSONResponse({"detail": "用户不存在"}, status_code=404)
 
+    # 自己的密码必须走 /api/auth/change-password（需验证当前密码），
+    # 管理员在用户管理中只能为其他用户直接重置密码。
+    if payload.password and target["id"] == admin["id"]:
+        return JSONResponse(
+            {
+                "detail": "修改自己的密码请使用「修改我的密码」（将验证当前密码），"
+                "不能通过用户管理直接重置"
+            },
+            status_code=400,
+        )
+
     disabling = payload.is_active is False and target["is_active"]
     if disabling and target["id"] == admin["id"]:
         return JSONResponse({"detail": "不能禁用当前登录的管理员账号"}, status_code=400)

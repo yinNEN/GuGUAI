@@ -765,24 +765,70 @@ def upsert_snapshot(user_id: int, session: dict, project: bool = True) -> bool:
             "SELECT updated_at, data FROM session_snapshots WHERE user_id = ? AND client_id = ?",
             (user_id, client_id),
         ).fetchone()
-        # 多设备并发时不让较旧的快照覆盖较新的（相同时间戳允许更新标题等元数据）
-        if existing is not None and updated < int(existing["updated_at"]):
-            return False
+        previous_session: dict | None = None
         if existing is not None:
             try:
-                previous_session = json.loads(existing["data"])
+                parsed = json.loads(existing["data"])
+                previous_session = parsed if isinstance(parsed, dict) else None
             except Exception:
                 previous_session = None
-            if isinstance(previous_session, dict):
-                _merge_missing_server_ids(session, previous_session)
-                data = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
+        # Compare content revisions, not the title-only revision stored in the
+        # column. This lets a renamed session still receive a settled snapshot
+        # produced by a client that has not seen the rename yet.
+        content_updated = 0
+        title_revision = int(existing["updated_at"] or 0) if existing is not None else 0
+        if previous_session is not None:
+            try:
+                content_updated = int(
+                    previous_session.get("contentUpdatedAt")
+                    or previous_session.get("updatedAt")
+                    or 0
+                )
+            except (TypeError, ValueError):
+                content_updated = 0
+            try:
+                title_revision = max(
+                    title_revision,
+                    int(previous_session.get("titleUpdatedAt") or 0),
+                    int(previous_session.get("updatedAt") or 0),
+                )
+            except (TypeError, ValueError):
+                pass
+        # Compare against the actual content revision. Rename advances the
+        # public updatedAt/title revision, but must not make a legitimate
+        # settled snapshot from a client with an older clock look stale.
+        if existing is not None and updated < content_updated:
+            return False
+        if previous_session is not None:
+            _merge_missing_server_ids(session, previous_session)
+            incoming_updated = updated
+            if title_revision > updated:
+                # A newer rename exists: retain its title instead of letting an
+                # older content snapshot resurrect the previous title.
+                session["title"] = previous_session.get("title") or title
+                session["titleUpdatedAt"] = title_revision
+                session["updatedAt"] = title_revision
+                title = str(session["title"])
+                updated = title_revision
+            else:
+                session["titleUpdatedAt"] = updated
+            # The incoming snapshot is the authoritative content revision even
+            # when its clock predates the title revision.
+            session["contentUpdatedAt"] = incoming_updated
+            if updated > int(session.get("updatedAt") or 0):
+                session["updatedAt"] = updated
+            data = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
+        else:
+            session["contentUpdatedAt"] = updated
+            data = json.dumps(session, ensure_ascii=False, separators=(",", ":"))
+        column_updated = max(updated, int(existing["updated_at"] or 0)) if existing is not None else updated
         conn.execute(
             "INSERT INTO session_snapshots (user_id, client_id, title, data, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(user_id, client_id) DO UPDATE SET "
             "title = excluded.title, data = excluded.data, "
             "created_at = excluded.created_at, updated_at = excluded.updated_at",
-            (user_id, client_id, title[:200], data, created, updated),
+            (user_id, client_id, title[:200], data, created, column_updated),
         )
         old_ids, new_ids = _replace_session_refs(conn, user_id, client_id, session)
         if project:
@@ -795,36 +841,63 @@ def upsert_snapshot(user_id: int, session: dict, project: bool = True) -> bool:
     return True
 
 
-def rename_snapshot(user_id: int, client_id: str, title: str) -> bool:
+def rename_snapshot(user_id: int, client_id: str, title: str) -> int | None:
+    """Rename without touching messages/attachment references.
+
+    Returns the new revision so clients can align their local summary. The
+    timestamp must advance even when the previous snapshot had the same
+    millisecond, otherwise another device's sync would not notice the rename.
+    """
     with db() as conn:
         row = conn.execute(
-            "SELECT data FROM session_snapshots WHERE user_id = ? AND client_id = ?",
+            "SELECT data, updated_at FROM session_snapshots WHERE user_id = ? AND client_id = ?",
             (user_id, client_id),
         ).fetchone()
         if not row:
-            return False
+            return None
         try:
             data = json.loads(row["data"])
         except Exception:
             data = {}
-        if isinstance(data, dict):
-            data["title"] = title
-            conn.execute(
-                "UPDATE session_snapshots SET title = ?, data = ?, updated_at = ? "
-                "WHERE user_id = ? AND client_id = ?",
-                (
-                    title[:200],
-                    json.dumps(data, ensure_ascii=False, separators=(",", ":")),
-                    int(data.get("updatedAt") or 0) or int(datetime.now(timezone.utc).timestamp() * 1000),
-                    user_id,
-                    client_id,
-                ),
-            )
+        if not isinstance(data, dict):
+            return None
+        previous = int(row["updated_at"] or 0)
+        now = int(datetime.now(timezone.utc).timestamp() * 1000)
+        try:
+            data_updated = int(data.get("updatedAt") or 0)
+        except (TypeError, ValueError):
+            data_updated = 0
+        revision = max(now, previous + 1, data_updated + 1)
+        data["title"] = title
+        # Keep the content revision separate from the title revision. A client
+        # that has not yet received the rename must still be able to push a
+        # legitimate settled snapshot whose updatedAt predates the server clock;
+        # upsert_snapshot will preserve this newer title when merging it.
+        try:
+            content_revision = int(data.get("contentUpdatedAt") or data.get("updatedAt") or previous)
+        except (TypeError, ValueError):
+            content_revision = previous
+        data["contentUpdatedAt"] = content_revision
+        data["updatedAt"] = revision
+        data["titleUpdatedAt"] = revision
         conn.execute(
-            "UPDATE conversations SET title = ? WHERE user_id = ? AND client_id = ?",
-            (title[:200], user_id, client_id),
+            "UPDATE session_snapshots SET title = ?, data = ?, updated_at = ? "
+            "WHERE user_id = ? AND client_id = ?",
+            (
+                title[:200],
+                json.dumps(data, ensure_ascii=False, separators=(",", ":")),
+                revision,
+                user_id,
+                client_id,
+            ),
         )
-        return True
+        # Admin conversation list reads this projection rather than the snapshot.
+        conn.execute(
+            "UPDATE conversations SET title = ?, updated_at = ? "
+            "WHERE user_id = ? AND client_id = ?",
+            (title[:200], _ms_to_iso(revision), user_id, client_id),
+        )
+        return revision
 
 
 def delete_conversation(conv_id: int) -> bool:
