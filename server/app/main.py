@@ -213,6 +213,11 @@ def create_app() -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        # Backend page assets use stable filenames, not content hashes. Revalidate
+        # them on every page load so an updated app.css cannot be hidden by an
+        # old browser cache; this avoids per-page ?v= query strings.
+        if path.startswith("/ui/assets/"):
+            response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         return response
 
     app.include_router(pages.router)
