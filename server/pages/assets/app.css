@@ -152,8 +152,8 @@ td .actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .toolbar input, .toolbar select { height: 34px; border: 1px solid var(--line); border-radius: 9px; padding: 0 10px; background: #fff; }
 
 .kv { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 10px 18px; font-size: 13px; }
-.kv > * { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
-.kv a { overflow-wrap: anywhere; word-break: break-word; }
+.kv > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; word-break: break-word; }
+.kv a { display: block; max-width: 100%; overflow-wrap: anywhere; word-break: break-all; }
 .kv .k { color: var(--muted); }
 .mono { font-family: "Cascadia Code", Consolas, "Courier New", monospace; font-size: 12.5px; overflow-wrap: anywhere; }
 
